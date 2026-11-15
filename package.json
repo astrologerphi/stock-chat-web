@@ -1,0 +1,27 @@
+{
+  "name": "stock-chat-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Meridian — an LLM-assisted explorer for the US stock market",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "node scripts/build.ts --watch",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "mongoose": "^9.12.1",
+    "preact": "^11.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
