@@ -1,0 +1,358 @@
+import type { ComponentChildren } from 'preact';
+import { useCallback, useEffect, useState } from 'preact/hooks';
+import { api } from '../api.ts';
+import { compact, countryName, flag, fullTime, money, relTime } from '../format.ts';
+import { useSettings } from '../settings.ts';
+import { isActive, runAnalysis, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { toast } from '../toast.ts';
+import * as I from '../components/icons.tsx';
+import { Avatar, Chip, FloatGauge, Heat, Markdown, Modal, ScoreDial, Spinner, svgUrl } from '../components/ui.tsx';
+import type { Diagram, PromptConfig, StockDetail as Detail } from '../../shared/types.ts';
+
+function Fact({ label, children }: { label: string; children: ComponentChildren }) {
+  return (
+    <div class="fact">
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+function TagEditor({ symbol, tags, onChange }: { symbol: string; tags: string[]; onChange: (t: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const save = async (next: string[]) => {
+    setSaving(true);
+    try {
+      onChange((await api.setTags(symbol, next)).tags);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const add = () => {
+    const t = draft.trim();
+    if (!t) return;
+    setDraft('');
+    if (!tags.some((x) => x.toLowerCase() === t.toLowerCase())) void save([...tags, t]);
+  };
+  return (
+    <div class={`tag-editor${saving ? ' is-saving' : ''}`}>
+      {tags.map((t) => (
+        <Chip key={t} onRemove={() => save(tags.filter((x) => x !== t))}>
+          <a href={`#/?tags=${encodeURIComponent(t)}`} class="chip__link">
+            {t}
+          </a>
+        </Chip>
+      ))}
+      <form
+        class="tag-editor__add"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add();
+        }}
+      >
+        <I.Plus size={13} />
+        <input value={draft} maxLength={32} placeholder="Add tag" onInput={(e) => setDraft(e.currentTarget.value)} onBlur={add} />
+      </form>
+    </div>
+  );
+}
+
+function Diagrams({ diagrams }: { diagrams: Diagram[] }) {
+  const [active, setActive] = useState(0);
+  const [zoom, setZoom] = useState<Diagram | null>(null);
+  const close = useCallback(() => setZoom(null), []);
+  const d = diagrams[Math.min(active, diagrams.length - 1)];
+  if (!d) return null;
+  return (
+    <section class="card panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          <I.Grid size={16} /> Diagrams
+        </h2>
+        {diagrams.length > 1 && (
+          <div class="seg">
+            {diagrams.map((x, i) => (
+              <button key={x.promptId} class={i === active ? 'is-on' : ''} onClick={() => setActive(i)}>
+                {x.title}
+              </button>
+            ))}
+          </div>
+        )}
+      </header>
+      <button class={`diagram${d.horizontal ? ' has-h' : ''}${d.vertical ? ' has-v' : ''}`} onClick={() => setZoom(d)} title="Open full screen">
+        {d.horizontal && <img class="diagram__h" src={svgUrl(d.horizontal)} alt={`${d.title} (landscape)`} />}
+        {d.vertical && <img class="diagram__v" src={svgUrl(d.vertical)} alt={`${d.title} (portrait)`} />}
+        <span class="diagram__zoom">
+          <I.Maximize size={14} />
+        </span>
+      </button>
+      {zoom && (
+        <Modal onClose={close} label={zoom.title}>
+          <div class={`diagram diagram--full${zoom.horizontal ? ' has-h' : ''}${zoom.vertical ? ' has-v' : ''}`}>
+            {zoom.horizontal && <img class="diagram__h" src={svgUrl(zoom.horizontal)} alt={zoom.title} />}
+            {zoom.vertical && <img class="diagram__v" src={svgUrl(zoom.vertical)} alt={zoom.title} />}
+          </div>
+        </Modal>
+      )}
+    </section>
+  );
+}
+
+export function StockDetail({ symbol }: { symbol: string }) {
+  const settings = useSettings();
+  const [data, setData] = useState<Detail | null>(null);
+  const [prompts, setPrompts] = useState<PromptConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [heatLoading, setHeatLoading] = useState(false);
+  const tasks = useTasks();
+  const task = tasks.get(symbol);
+  const busy = task ? isActive(task) : false;
+
+  const load = useCallback(async () => {
+    try {
+      const d = await api.detail(symbol);
+      setData(d);
+      setError(null);
+      if (settings.fmpKey && (d.heat == null || !d.heatUpdatedAt || Date.now() - Date.parse(d.heatUpdatedAt) > 12 * 3600_000)) {
+        setHeatLoading(true);
+        api
+          .heat([symbol])
+          .then(([h]) => h && setData((x) => x && { ...x, heat: h.heat }))
+          .catch(() => {})
+          .finally(() => setHeatLoading(false));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [symbol, settings.fmpKey]);
+
+  useEffect(() => {
+    setData(null);
+    void load();
+    api.prompts().then(setPrompts).catch(() => {});
+    window.scrollTo({ top: 0 });
+  }, [load]);
+
+  useOnTasksFinished(useCallback((symbols: string[]) => symbols.includes(symbol) && void load(), [symbol, load]));
+
+  if (error) {
+    return (
+      <div class="page">
+        <a class="back" href="#/">
+          <I.ChevronLeft size={16} /> Market
+        </a>
+        <div class="empty empty--error">{error}</div>
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div class="page detail">
+        <a class="back" href="#/">
+          <I.ChevronLeft size={16} /> Market
+        </a>
+        <div class="detail-hero">
+          <span class="skeleton" style={{ width: '88px', height: '88px', borderRadius: '24px' }} />
+          <div style={{ flex: 1, display: 'grid', gap: '12px' }}>
+            <span class="skeleton" style={{ width: '120px', height: '16px' }} />
+            <span class="skeleton" style={{ width: '50%', height: '48px' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const cap = money(data.marketCap);
+  const up = (data.changePercentage ?? 0) >= 0;
+  const scorePrompts = prompts?.scorePrompts ?? [];
+  const analysed = !!data.lastLlmRunAt;
+
+  return (
+    <div class="page detail">
+      <a class="back" href="#/" onClick={(e) => { if (history.length > 1) { e.preventDefault(); history.back(); } }}>
+        <I.ChevronLeft size={16} /> Market
+      </a>
+
+      <section class="detail-hero">
+        <Avatar symbol={data.symbol} src={data.image} size={88} />
+        <div class="detail-hero__main">
+          <div class="detail-hero__meta">
+            <span class="ticker">{data.symbol}</span>
+            <span class={`exch exch--${data.exchange.toLowerCase()}`}>{data.exchange}</span>
+            <span class="muted">
+              {flag(data.country)} {countryName(data.country)}
+            </span>
+          </div>
+          <h1 class="display display--detail">{data.name}</h1>
+          <p class="muted">{[data.sector, data.industry].filter(Boolean).join(' · ')}</p>
+        </div>
+        <div class="detail-hero__side">
+          {data.price != null && (
+            <div class="quote">
+              <span class="quote__price num">${data.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              {data.changePercentage != null && (
+                <span class={`quote__chg num ${up ? 'up' : 'down'}`}>
+                  {up ? '▲' : '▼'} {Math.abs(data.changePercentage).toFixed(2)}%
+                </span>
+              )}
+            </div>
+          )}
+          <button class="btn btn--primary" disabled={busy} onClick={() => runAnalysis([data.symbol])}>
+            {busy ? <Spinner /> : <I.Sparkle size={16} />}
+            {busy ? (task?.state === 'queued' ? 'Queued…' : 'Analysing…') : analysed ? 'Re-run analysis' : 'Run analysis'}
+          </button>
+          <span class="muted small" title={fullTime(data.lastLlmRunAt)}>
+            {analysed ? `Last LLM run ${relTime(data.lastLlmRunAt)}${data.llmModel ? ` · ${data.llmModel}` : ''}` : 'Not analysed yet'}
+          </span>
+        </div>
+      </section>
+
+      {data.llmError && !busy && <div class="banner banner--error">Last analysis failed: {data.llmError}</div>}
+      {busy && (
+        <div class="banner banner--busy">
+          <Spinner /> Gemini is reading the filings, news and profile for {data.symbol}. Diagrams take a minute or two.
+        </div>
+      )}
+
+      <dl class="facts card">
+        <Fact label="Market cap">
+          <span class="num big">
+            {cap.value}
+            <span class="cap__unit">{cap.unit}</span>
+          </span>
+        </Fact>
+        <Fact label="Heat · 30d news">
+          <Heat count={data.heat} loading={heatLoading} />
+        </Fact>
+        <Fact label="Float / outstanding">
+          <FloatGauge ratio={data.floatRatio} size={26} />
+          <span class="muted small num">
+            {compact(data.floatShares)} / {compact(data.outstandingShares)}
+          </span>
+        </Fact>
+        <Fact label="Exchange">{data.exchangeFullName || data.exchange}</Fact>
+        <Fact label="Country">
+          {flag(data.country)} {countryName(data.country)}
+        </Fact>
+        <Fact label="Last LLM run">
+          <span title={fullTime(data.lastLlmRunAt)}>{relTime(data.lastLlmRunAt)}</span>
+        </Fact>
+        {data.ceo && <Fact label="CEO">{data.ceo}</Fact>}
+        {data.employees != null && <Fact label="Employees">{data.employees.toLocaleString('en-US')}</Fact>}
+        {data.ipoDate && <Fact label="IPO">{new Date(data.ipoDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</Fact>}
+        {data.range && <Fact label="52-week range"><span class="num">{data.range}</span></Fact>}
+        {data.website && (
+          <Fact label="Website">
+            <a href={data.website} target="_blank" rel="noopener noreferrer" class="ext">
+              {data.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')} <I.Link size={12} />
+            </a>
+          </Fact>
+        )}
+      </dl>
+
+      <div class="detail-grid">
+        <div class="detail-main">
+          <section class="card panel">
+            <header class="panel__head">
+              <h2 class="panel__title">
+                <I.Sparkle size={16} /> Scores
+              </h2>
+              <a class="link-btn" href="#/prompts">
+                Edit prompts
+              </a>
+            </header>
+            {scorePrompts.length === 0 ? (
+              <p class="muted">No score prompts configured.</p>
+            ) : (
+              <div class="scores">
+                {scorePrompts.map((p) => {
+                  const s = data.scores[p.id];
+                  return (
+                    <article key={p.id} class="score-card">
+                      <ScoreDial score={s?.score} />
+                      <div class="score-card__body">
+                        <h3>{p.title}</h3>
+                        <p class="score-card__reason">{s?.reason || <span class="muted">Run an analysis to score this criterion.</span>}</p>
+                        <p class="score-card__prompt">{p.description}</p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {data.diagrams.length > 0 && <Diagrams diagrams={data.diagrams} />}
+
+          <section class="card panel">
+            <header class="panel__head">
+              <h2 class="panel__title">
+                <I.Quill size={16} /> Introduction
+              </h2>
+            </header>
+            {data.introduction ? (
+              <Markdown source={data.introduction} />
+            ) : data.description ? (
+              <div class="prose">
+                <p>{data.description}</p>
+                <p class="muted small">Company-provided description. Run an analysis for an AI-written introduction.</p>
+              </div>
+            ) : (
+              <p class="muted">Run an analysis to generate an introduction.</p>
+            )}
+          </section>
+        </div>
+
+        <aside class="detail-side">
+          <section class="card panel">
+            <header class="panel__head">
+              <h2 class="panel__title">
+                <I.Tag size={16} /> Tags
+              </h2>
+            </header>
+            <TagEditor symbol={data.symbol} tags={data.tags} onChange={(tags) => setData({ ...data, tags })} />
+          </section>
+
+          <section class="card panel">
+            <header class="panel__head">
+              <h2 class="panel__title">
+                <I.Users size={16} /> Leadership
+              </h2>
+            </header>
+            {data.leaders.length === 0 ? (
+              <p class="muted">{settings.fmpKey ? 'No leadership data available from FMP.' : 'Add an FMP key to load leadership.'}</p>
+            ) : (
+              <ul class="leaders">
+                {data.leaders.slice(0, 12).map((l) => (
+                  <li key={l.name + l.title}>
+                    <span class="leader__mono" style={{ '--h': (l.name.length * 47) % 360 }}>
+                      {l.name
+                        .replace(/^(Mr|Ms|Mrs|Dr)\.?\s+/i, '')
+                        .split(/\s+/)
+                        .filter((w) => /^[A-Z]/.test(w))
+                        .map((w) => w[0])
+                        .slice(0, 2)
+                        .join('')}
+                    </span>
+                    <span class="leader__text">
+                      <span class="leader__name">{l.name}</span>
+                      <span class="leader__title">{l.title}</span>
+                      <span class="leader__meta">
+                        {l.yearBorn ? `b. ${l.yearBorn}` : ''}
+                        {l.yearBorn && l.pay ? ' · ' : ''}
+                        {l.pay ? `${l.currencyPay === 'USD' || !l.currencyPay ? '$' : `${l.currencyPay} `}${compact(l.pay)} pay` : ''}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,254 @@
+import { Stock, type StockDoc } from './db.ts';
+import { Fmp, type FmpNews } from './fmp.ts';
+import { generateJson } from './gemini.ts';
+import { getPrompts } from './prompts.ts';
+import { mergeTags, normalizeTags, refreshProfile } from './stocks.ts';
+import { isoDate } from './util.ts';
+import type { Diagram, PromptConfig, ScoreEntry, TaskStatus } from '../shared/types.ts';
+
+interface Keys {
+  gemini: string;
+  fmp: string;
+  model: string;
+}
+
+interface LlmResult {
+  scores?: { id: string; score: number; reason: string }[];
+  tags?: string[];
+  introduction?: string;
+  diagrams?: { id: string; horizontalSvg: string; verticalSvg: string }[];
+}
+
+const CONCURRENCY = 3;
+const KEEP_FINISHED_MS = 15 * 60_000;
+const tasks = new Map<string, TaskStatus>();
+const queue: { symbol: string; keys: Keys }[] = [];
+let running = 0;
+
+export function getTaskStatuses(): TaskStatus[] {
+  const now = Date.now();
+  for (const [symbol, t] of tasks) {
+    if ((t.state === 'done' || t.state === 'error') && now - Date.parse(t.updatedAt) > KEEP_FINISHED_MS) tasks.delete(symbol);
+  }
+  return [...tasks.values()];
+}
+
+function setTask(symbol: string, state: TaskStatus['state'], error?: string) {
+  tasks.set(symbol, { symbol, state, error, updatedAt: new Date().toISOString() });
+}
+
+export function enqueue(symbols: string[], keys: Keys): number {
+  let added = 0;
+  for (const symbol of new Set(symbols)) {
+    const state = tasks.get(symbol)?.state;
+    if (state === 'queued' || state === 'running') continue;
+    setTask(symbol, 'queued');
+    queue.push({ symbol, keys });
+    added++;
+  }
+  pump();
+  return added;
+}
+
+function pump() {
+  while (running < CONCURRENCY && queue.length) {
+    const job = queue.shift()!;
+    running++;
+    setTask(job.symbol, 'running');
+    runTask(job.symbol, job.keys)
+      .then(() => setTask(job.symbol, 'done'))
+      .catch(async (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[llm] ${job.symbol}:`, message);
+        setTask(job.symbol, 'error', message);
+        await Stock.updateOne({ symbol: job.symbol }, { $set: { llmError: message } }).catch(() => {});
+      })
+      .finally(() => {
+        running--;
+        pump();
+      });
+  }
+}
+
+const PALETTE = `Canvas background #0E1013 (fill the whole viewBox with it). Panels #161A21 with #262B35 1px strokes and generous corner radii (16–24).
+Text: primary #EDE9E1, secondary #9AA0AA. Accents: chartreuse #C8F560, mint #5EE6C4, coral #FF8A5B, periwinkle #8AB4FF, amber #F5C45E.
+Fonts (system only): titles font-family="Georgia, 'Times New Roman', serif"; everything else font-family="'Helvetica Neue', Helvetica, Arial, sans-serif".`;
+
+const SYSTEM = `You are a senior equity research analyst and a world-class information designer.
+You analyse US-listed companies using only the supplied context plus well-established public knowledge, and you are calibrated, specific and concise.
+You return a single JSON object that strictly follows the provided JSON schema.`;
+
+function trimNews(news: FmpNews[]): string {
+  return news
+    .slice(0, 40)
+    .map((n) => `- [${n.publishedDate.slice(0, 10)}] ${n.title} (${n.site})${n.text ? ` — ${n.text.slice(0, 280)}` : ''}`)
+    .join('\n');
+}
+
+function buildPrompt(stock: StockDoc, news: FmpNews[], prompts: PromptConfig): string {
+  const facts = {
+    symbol: stock.symbol,
+    name: stock.name,
+    exchange: stock.exchangeFullName || stock.exchange,
+    country: stock.country,
+    sector: stock.sector,
+    industry: stock.industry,
+    marketCapUSD: stock.marketCap,
+    price: stock.price,
+    changePercentToday: stock.changePercentage,
+    fiftyTwoWeekRange: stock.profile?.range,
+    floatShares: stock.floatShares,
+    outstandingShares: stock.outstandingShares,
+    newsCountLast30Days: stock.heat,
+    ceo: stock.profile?.ceo,
+    employees: stock.profile?.employees,
+    ipoDate: stock.profile?.ipoDate,
+    website: stock.profile?.website,
+    leaders: stock.leaders.slice(0, 10).map((l) => `${l.name} — ${l.title}`),
+  };
+
+  const sections: string[] = [
+    `# Company context (today is ${isoDate(new Date())})`,
+    '```json',
+    JSON.stringify(facts, null, 2),
+    '```',
+    '## Business description',
+    stock.profile?.description || '(not available)',
+    '## Recent news (most recent first)',
+    news.length ? trimNews(news) : '(no recent news)',
+    '# Tasks',
+  ];
+
+  if (prompts.scorePrompts.length) {
+    sections.push(
+      '## 1. Scores',
+      'For EACH criterion below return an object {"id", "score", "reason"}. "score" is an integer from 0 (none) to 10 (exceptional); use the full range and be calibrated. "reason" is 1–2 crisp sentences grounded in the context.',
+      ...prompts.scorePrompts.map((p) => `- id "${p.id}" — ${p.title}: ${p.description}`),
+    );
+  }
+  sections.push(
+    '## 2. Tags',
+    'Return 4–8 short tags (1–3 words each, Title Case) capturing the company’s products, themes, narratives and market positioning. Avoid generic tags such as the sector name alone.',
+    '## 3. Introduction',
+    `${prompts.introPrompt || 'Write a concise introduction to this company.'} Use markdown (##/### headings, **bold**, bullet lists). Do not include a top-level title.`,
+  );
+  if (prompts.svgPrompts.length) {
+    sections.push(
+      '## 4. SVG diagrams',
+      `For EACH diagram below return {"id", "horizontalSvg", "verticalSvg"}: two complete, standalone SVG documents showing the same content.
+- horizontalSvg: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"> laid out for wide desktop screens.
+- verticalSvg: <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1600"> re-composed (not just rotated) for tall phone screens.
+Rules: no width/height attributes, no <script>, no <foreignObject>, no external images, fonts or links; only inline SVG shapes, paths, gradients and text.
+Keep every text element fully inside the viewBox with ample padding; minimum font size 22; never let text overlap. Include a title at the top and a one-line takeaway.
+Style: elegant, editorial, modern data-visualisation with clear hierarchy and whitespace. ${PALETTE}`,
+      ...prompts.svgPrompts.map((p) => `- id "${p.id}" — ${p.title}: ${p.description}`),
+    );
+  }
+  return sections.join('\n\n');
+}
+
+function buildSchema(prompts: PromptConfig): object {
+  const properties: Record<string, object> = {};
+  const required: string[] = [];
+  if (prompts.scorePrompts.length) {
+    properties.scores = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', enum: prompts.scorePrompts.map((p) => p.id) },
+          score: { type: 'integer', minimum: 0, maximum: 10 },
+          reason: { type: 'string' },
+        },
+        required: ['id', 'score', 'reason'],
+      },
+    };
+    required.push('scores');
+  }
+  properties.tags = { type: 'array', items: { type: 'string' } };
+  properties.introduction = { type: 'string' };
+  required.push('tags', 'introduction');
+  if (prompts.svgPrompts.length) {
+    properties.diagrams = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', enum: prompts.svgPrompts.map((p) => p.id) },
+          horizontalSvg: { type: 'string' },
+          verticalSvg: { type: 'string' },
+        },
+        required: ['id', 'horizontalSvg', 'verticalSvg'],
+      },
+    };
+    required.push('diagrams');
+  }
+  return { type: 'object', properties, required };
+}
+
+/** Defensive cleanup: diagrams are rendered via <img>, but never store active content. */
+export function sanitizeSvg(raw: string): string {
+  const match = /<svg[\s\S]*<\/svg>/i.exec(raw ?? '');
+  if (!match) return '';
+  let svg = match[0]
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href\s*=\s*)("|')\s*(?!#)[^"']*\2/gi, '$1$2#$2');
+  if (!/xmlns=/.test(svg.slice(0, 300))) svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  return svg;
+}
+
+async function runTask(symbol: string, keys: Keys) {
+  const fmp = new Fmp(keys.fmp);
+  const prompts = await getPrompts();
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 86_400_000);
+
+  const [stock, news] = await Promise.all([
+    refreshProfile(fmp, symbol, { force: true }),
+    fmp.news(symbol, { from: isoDate(from), to: isoDate(to), limit: 40 }).catch(() => [] as FmpNews[]),
+  ]);
+  if (!stock) throw new Error(`Unknown symbol ${symbol}`);
+
+  const result = await generateJson<LlmResult>({
+    key: keys.gemini,
+    model: keys.model,
+    system: SYSTEM,
+    prompt: buildPrompt(stock, news, prompts),
+    schema: buildSchema(prompts),
+  });
+
+  const scores: Record<string, ScoreEntry> = { ...stock.scores };
+  for (const s of result.scores ?? []) {
+    if (!prompts.scorePrompts.some((p) => p.id === s.id)) continue;
+    const score = Math.max(0, Math.min(10, Math.round(Number(s.score))));
+    if (Number.isFinite(score)) scores[s.id] = { score, reason: String(s.reason ?? '').trim() };
+  }
+
+  const diagrams: Diagram[] = [];
+  for (const p of prompts.svgPrompts) {
+    const d = result.diagrams?.find((x) => x.id === p.id);
+    if (!d) continue;
+    const horizontal = sanitizeSvg(d.horizontalSvg);
+    const vertical = sanitizeSvg(d.verticalSvg);
+    if (horizontal || vertical) diagrams.push({ promptId: p.id, title: p.title, horizontal, vertical });
+  }
+
+  const llmTags = normalizeTags(result.tags ?? []).slice(0, 10);
+  await Stock.updateOne(
+    { symbol },
+    {
+      $set: {
+        scores,
+        llmTags,
+        tags: mergeTags(llmTags, stock.tagEdits ?? { added: [], removed: [] }),
+        introduction: String(result.introduction ?? '').trim(),
+        diagrams,
+        lastLlmRunAt: new Date(),
+        llmModel: keys.model,
+        llmError: null,
+      },
+    },
+  );
+}
