@@ -20,10 +20,20 @@ A dark, editorial web app for exploring and analysing the US stock market. Marke
 ```sh
 npm install
 npm run build      # esbuild → dist/
-npm start          # http://localhost:3000 (override with PORT)
+npm start          # http(s)://localhost:3000 (override with PORT)
 npm run dev        # rebuild + restart on change
 npm run typecheck  # TypeScript 7
 ```
+
+## HTTPS
+
+If `localhost+2.pem` and `localhost+2-key.pem` (from `mkcert localhost 127.0.0.1 ::1`) exist in the project root, `npm start` and `npm run dev` serve over HTTPS on the same port (`https://localhost:3000`).
+
+- `HTTPS_CERT` / `HTTPS_KEY`: use certificate files from other paths.
+- `HTTPS=1`: fail on startup if the files are missing.
+- `HTTPS=0`: force plain HTTP.
+
+`*.pem` files are gitignored.
 
 ## Keys
 
