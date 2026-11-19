@@ -19,10 +19,10 @@ function TaskIndicator() {
   const queued = all.filter((t) => t.state === 'queued').length;
   if (!running && !queued) return null;
   return (
-    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol}: ${t.state}`).join('\n')}>
+    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
       <Spinner size={12} />
       <span>
-        {running} analysing{queued ? ` · ${queued} queued` : ''}
+        {running} running{queued ? ` · ${queued} queued` : ''}
       </span>
     </span>
   );

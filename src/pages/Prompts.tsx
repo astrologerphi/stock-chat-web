@@ -112,7 +112,7 @@ export function Prompts() {
         <h1 class="display display--page">
           Teach the analyst <em>what to look for.</em>
         </h1>
-        <p class="lede">All prompts are sent to Gemini together in a single request per stock — scores, tags, diagrams and the introduction.</p>
+        <p class="lede">Scores, tags and the introduction are requested together in one analysis call per stock. Diagrams are a separate call, started from the stock page.</p>
       </header>
 
       <section class="card panel">
@@ -141,7 +141,7 @@ export function Prompts() {
             <h2 class="panel__title">
               <I.Grid size={16} /> SVG diagram prompts
             </h2>
-            <p class="panel__sub">Gemini draws each diagram twice — landscape for desktop, portrait for phones.</p>
+            <p class="panel__sub">Generated on demand from a stock page. Gemini draws each diagram twice — landscape for desktop, portrait for phones.</p>
           </div>
           <span class="count-badge num">{draft.svgPrompts.length}</span>
         </header>

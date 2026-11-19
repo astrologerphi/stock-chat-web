@@ -1838,6 +1838,58 @@ main {
   object-fit: contain;
 }
 
+.panel__head > .btn {
+  flex-shrink: 0;
+}
+
+.diagram-tabs {
+  margin-bottom: 14px;
+}
+
+.diagram.is-stale img {
+  opacity: 0.45;
+  transition: opacity 0.3s var(--ease);
+}
+
+.diagram-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  min-height: clamp(220px, 30vw, 320px);
+  padding: 24px;
+  text-align: center;
+  color: var(--text-2);
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  background: rgb(var(--ink-rgb) / 0.02);
+}
+
+.diagram-empty > svg {
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.diagram-empty.is-busy {
+  border-color: rgb(var(--accent-rgb) / 0.35);
+  background: var(--accent-soft);
+}
+
+.diagram-empty p {
+  margin: 0;
+  max-width: 44ch;
+}
+
+.diagram-empty__title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.panel__head--wrap {
+  flex-wrap: wrap;
+}
+
 /* prose */
 
 .prose {

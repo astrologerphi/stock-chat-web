@@ -83,8 +83,12 @@ export interface PromptConfig {
 
 export type TaskState = 'queued' | 'running' | 'done' | 'error';
 
+/** `analysis` = scores, tags and introduction; `diagrams` = SVG diagrams only. */
+export type TaskKind = 'analysis' | 'diagrams';
+
 export interface TaskStatus {
   symbol: string;
+  kind: TaskKind;
   state: TaskState;
   error?: string;
   updatedAt: string;

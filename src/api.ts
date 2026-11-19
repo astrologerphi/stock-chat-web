@@ -6,7 +6,7 @@ import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setT
 import { getSyncStatus, startSync } from './data/sync.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { Facet, ListResponse, PromptConfig, StockDetail, SyncStatus, TaskStatus } from './types.ts';
+import type { Facet, ListResponse, PromptConfig, StockDetail, SyncStatus, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -76,13 +76,16 @@ export const api = {
     startSync(keys().fmp);
     return getSyncStatus();
   },
-  async runLlm(symbols: string[]) {
+  async runLlm(symbols: string[], kind: TaskKind = 'analysis') {
     const list = symbols.map(String).slice(0, 200);
     if (!list.length) throw new HttpError(400, 'No symbols provided');
     const k = keys();
     if (!k.gemini) throw new HttpError(400, 'Gemini API key is missing. Add it in Settings.');
     if (!k.fmp) throw new HttpError(400, 'FMP API key is missing. Add it in Settings.');
-    return { queued: enqueue(list, k), tasks: getTaskStatuses() };
+    if (kind === 'diagrams' && !(await getPrompts()).svgPrompts.length) {
+      throw new HttpError(400, 'No diagram prompts configured. Add one on the Prompts page.');
+    }
+    return { queued: enqueue(list, k, kind), tasks: getTaskStatuses() };
   },
   async llmStatus(): Promise<TaskStatus[]> {
     return getTaskStatuses();

@@ -7,11 +7,13 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 ## Features
 
 - **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days, loaded asynchronously per page), float / outstanding ratio, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
-- **Stock detail**: quote and facts, score dials with reasons, editable tags (manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen), AI introduction, and leadership from FMP.
+- **Stock detail**: quote and facts, score dials with reasons, editable tags (manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Settings**: Gemini key with connection test, model picker, FMP key with test, page size and universe sync.
 - **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
-- **LLM tasks**: one Gemini call per stock returns every score, tags, the introduction and all diagrams as structured JSON. The context is the FMP profile and the news from the last 30 days. Run it for a single stock or for the whole page.
+- **LLM tasks**: two kinds, both using the FMP profile and the news from the last 30 days as context and returning structured JSON.
+  - *Analysis*: one Gemini call returns every score with its reason, tags and the introduction. Run it from the list (one row or the whole page) or from the detail page.
+  - *Diagrams*: a separate Gemini call returns all SVG diagrams. It runs only from the detail page, because diagrams are slow and token-heavy.
 
 ## Requirements
 
@@ -58,7 +60,7 @@ Cross-Origin-Embedder-Policy: require-corp
 - **API keys** stay **only in the browser's localStorage** (`meridian.settings`) and are sent directly to FMP and Gemini. Enter them on the Settings page. The first visit with an FMP key syncs the company universe automatically.
 - **Stock data, scores, tags, prompts** live in `meridian.db`, a SQLite file in the [Origin Private File System](https://developer.mozilla.org/docs/Web/API/File_System_API/Origin_private_file_system). Each browser profile has its own database, and clearing the site's data deletes it.
 - OPFS file handles are exclusive, so the app can be open in **one tab at a time**; a second tab shows a message instead of corrupting the file.
-- LLM tasks run in the page (three at a time). Queued tasks are lost if the page is closed or reloaded before they finish.
+- LLM tasks run in the page (three at a time). Analysis and diagram tasks for the same stock can run side by side because they write different columns. Queued tasks are lost if the page is closed or reloaded before they finish.
 
 ### Schema
 
@@ -147,7 +149,11 @@ Loaded asynchronously: the heat of each company on the current page, and the num
 
 ### LLM task and context
 
-Each task produces, for a single stock: scores with reasons, tags, SVG diagrams and the company introduction, then updates *Last LLM run*. The context is the news, company description and other data fetched from FMP. The user can batch-run tasks for every stock on a page, or run one for a single stock.
+An analysis task produces, for a single stock: scores with reasons, tags and the company introduction, then updates *Last LLM run*. The user can batch-run analysis for every stock on a page, or run it for a single stock from the list or the detail page.
+
+A diagram task produces only the SVG diagrams. It is started from the stock detail page and replaces that stock's diagrams. It does not change the scores, tags, introduction or *Last LLM run*.
+
+Both use the news, company description and other data fetched from FMP as context.
 
 ### Tech stack
 
