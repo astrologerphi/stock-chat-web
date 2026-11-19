@@ -72,7 +72,7 @@ function pump() {
 
 const PALETTE = `Canvas background #0E1013 (fill the whole viewBox with it). Panels #161A21 with #262B35 1px strokes and generous corner radii (16–24).
 Text: primary #EDE9E1, secondary #9AA0AA. Accents: chartreuse #C8F560, mint #5EE6C4, coral #FF8A5B, periwinkle #8AB4FF, amber #F5C45E.
-Fonts (system only): titles font-family="Georgia, 'Times New Roman', serif"; everything else font-family="'Helvetica Neue', Helvetica, Arial, sans-serif".`;
+Fonts (system sans-serif only, never serif): font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" everywhere; titles font-weight="600" with slightly tight letter-spacing.`;
 
 const SYSTEM = `You are a senior equity research analyst and a world-class information designer.
 You analyse US-listed companies using only the supplied context plus well-established public knowledge, and you are calibrated, specific and concise.

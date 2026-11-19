@@ -4,6 +4,7 @@ import './styles.css';
 import { useRoute } from './router.ts';
 import { useSettings } from './settings.ts';
 import { isActive, useTasks } from './tasks.ts';
+import { setTheme, useTheme, type Theme } from './theme.ts';
 import * as I from './components/icons.tsx';
 import { Logo, Spinner, Toasts } from './components/ui.tsx';
 import { Prompts } from './pages/Prompts.tsx';
@@ -24,6 +25,26 @@ function TaskIndicator() {
         {running} analysing{queued ? ` · ${queued} queued` : ''}
       </span>
     </span>
+  );
+}
+
+function ThemeSwitch() {
+  const theme = useTheme();
+  const pick = (t: Theme) => (e: MouseEvent) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTheme(t, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  };
+  return (
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button type="button" aria-pressed={theme === 'dark'} title="Dark theme" onClick={pick('dark')}>
+        <I.Moon size={15} />
+        <span class="sr-only">Dark</span>
+      </button>
+      <button type="button" aria-pressed={theme === 'light'} title="Solarized Light theme" onClick={pick('light')}>
+        <I.Sun size={15} />
+        <span class="sr-only">Light</span>
+      </button>
+    </div>
   );
 }
 
@@ -81,6 +102,7 @@ function App() {
         </nav>
         <div class="topbar__right">
           <TaskIndicator />
+          <ThemeSwitch />
         </div>
       </header>
       <main>{page}</main>
