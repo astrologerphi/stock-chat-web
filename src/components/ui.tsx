@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { heatLevel, hue, scoreTone } from '../format.ts';
+import { HEAT_TIER_LABEL, heatTier, hue, scoreTone, type HeatTier } from '../format.ts';
 import { dismiss, useToasts } from '../toast.ts';
 import * as I from './icons.tsx';
 
@@ -69,17 +69,30 @@ export function ScoreDial({ score, size = 76 }: { score: number | undefined; siz
   );
 }
 
-export function Heat({ count, loading }: { count: number | null; loading?: boolean }) {
+/** Mercury column top (SVG y) per tier; the tube runs from y 4 down to the bulb at y 18. */
+const MERCURY_TOP: Record<HeatTier, number> = { none: 18, low: 12.5, medium: 9.5, hot: 6.5, explosive: 4 };
+
+export function Heat({ count, loading, label }: { count: number | null; loading?: boolean; label?: boolean }) {
   if (loading && count == null) return <span class="skeleton" style={{ width: '64px', height: '14px' }} />;
-  const level = heatLevel(count);
+  const tier = heatTier(count);
+  const top = MERCURY_TOP[tier];
   return (
-    <span class={`heat heat--${level}${loading ? ' is-refreshing' : ''}`} title={count == null ? 'Not loaded yet' : `${count} news articles in the last 30 days`}>
-      <span class="heat__bars">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <i key={i} class={i <= level ? 'on' : ''} style={{ height: `${30 + i * 14}%` }} />
-        ))}
-      </span>
+    <span
+      class={`heat heat--${tier}${loading ? ' is-refreshing' : ''}`}
+      title={count == null ? 'Not loaded yet' : `${HEAT_TIER_LABEL[tier]} · ${count} news articles in the last 30 days`}
+    >
+      <svg class="heat__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        {tier !== 'none' && (
+          <g class="heat__mercury">
+            <circle cx="12" cy="18" r="2.25" />
+            <rect x="11" y={top} width="2" height={18 - top} rx="1" />
+          </g>
+        )}
+        <path class="heat__tube" d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" />
+        {tier === 'explosive' && <path class="heat__sparks" d="M17.5 4 19.5 2.5M18 8h2.5M17.5 12l2 1.5" />}
+      </svg>
       <span class="heat__n">{count ?? '—'}</span>
+      {label && count != null && <span class="heat__label">{HEAT_TIER_LABEL[tier]}</span>}
     </span>
   );
 }

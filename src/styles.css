@@ -23,8 +23,10 @@
   --peri: #8ab4ff;
   --rose: #ff6b8b;
 
-  --sans: 'Inter Tight', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Listed first so Windows, which has no flag emoji, draws them from the polyfill font (see main.tsx).
+     Its unicode-range covers only flag code points, so every other character falls through. */
+  --sans: 'Twemoji Country Flags', 'Inter Tight', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Twemoji Country Flags', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --r-sm: 8px;
   --r: 14px;
@@ -1225,27 +1227,48 @@ main {
   gap: 8px;
 }
 
-.heat__bars {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 16px;
+.heat--low { --heat: var(--peri); --heat-rgb: var(--peri-rgb); }
+.heat--medium { --heat: var(--amber); --heat-rgb: var(--amber-rgb); }
+.heat--hot { --heat: var(--coral); --heat-rgb: var(--coral-rgb); }
+.heat--explosive { --heat: var(--rose); --heat-rgb: var(--rose-rgb); }
+
+.heat__icon {
+  flex: none;
+  overflow: visible;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.heat__bars i {
-  width: 4px;
-  border-radius: 2px;
-  background: rgb(var(--ink-rgb) / 0.08);
+.heat__tube {
+  stroke: var(--text-3);
 }
 
-.heat__bars i.on {
-  background: linear-gradient(to top, var(--amber), var(--coral));
-  box-shadow: 0 0 8px rgb(var(--coral-rgb) / 0.35);
+.heat--low .heat__tube,
+.heat--medium .heat__tube {
+  stroke: rgb(var(--heat-rgb) / 0.6);
 }
 
-.heat--5 .heat__bars i.on {
-  background: linear-gradient(to top, var(--coral), var(--rose));
-  box-shadow: 0 0 10px rgb(var(--rose-rgb) / 0.5);
+.heat__mercury {
+  fill: var(--heat);
+}
+
+.heat--hot .heat__tube,
+.heat--explosive .heat__tube {
+  stroke: var(--heat);
+}
+
+.heat--hot .heat__icon {
+  filter: drop-shadow(0 0 4px rgb(var(--heat-rgb) / 0.35));
+}
+
+.heat--explosive .heat__icon {
+  filter: drop-shadow(0 0 6px rgb(var(--heat-rgb) / 0.55));
+}
+
+.heat__sparks {
+  stroke: var(--heat);
 }
 
 .heat__n {
@@ -1254,9 +1277,19 @@ main {
   color: var(--text-2);
 }
 
-.heat--4 .heat__n,
-.heat--5 .heat__n {
+.heat--hot .heat__n,
+.heat--explosive .heat__n {
   color: var(--text);
+}
+
+.heat--explosive .heat__n {
+  font-weight: 600;
+}
+
+.heat__label {
+  color: var(--heat);
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
 .heat.is-refreshing {
@@ -1290,10 +1323,15 @@ main {
   color: var(--text-2);
 }
 
+/* Fixed box so names line up even before the flag font loads (letters are narrower than flags). */
 .flag {
-  font-size: 16px;
+  display: inline-block;
+  width: 1.375em;
   margin-right: 6px;
-  vertical-align: -1px;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+  vertical-align: -2px;
 }
 
 .country__code {
