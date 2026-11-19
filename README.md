@@ -1,6 +1,6 @@
 # Meridian
 
-A dark, editorial web app for exploring and analysing the US stock market. Market data comes from [FMP](https://financialmodelingprep.com); qualitative analysis (scores, tags, introductions, SVG diagrams) comes from Gemini.
+A web app for exploring and analysing the US stock market. Market data comes from [FMP](https://financialmodelingprep.com); qualitative analysis (scores, tags, introductions, SVG diagrams) comes from Gemini.
 
 Meridian is a **single static page** with no backend. Data is stored in a SQLite database inside the browser via [`@tursodatabase/database-wasm`](https://www.npmjs.com/package/@tursodatabase/database-wasm), and FMP and Gemini are called straight from the page. It deploys to Vercel as plain static files.
 
@@ -10,6 +10,7 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Settings**: Gemini key with connection test, model picker, FMP key with test, page size and universe sync.
+- **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
 - **LLM tasks**: one Gemini call per stock returns every score, tags, the introduction and all diagrams as structured JSON. The context is the FMP profile and the news from the last 30 days. Run it for a single stock or for the whole page.
 
 ## Requirements
@@ -156,4 +157,4 @@ Each task produces, for a single stock: scores with reasons, tags, SVG diagrams 
 - Browser SQLite via `@tursodatabase/database-wasm` for storage (later synced with Turso Cloud).
 - localStorage for secrets.
 - No backend: a single static page hosted on Vercel.
-- Aesthetics: dark, editorial, distinctive.
+- Aesthetics: distinctive, sans-serif only; dark by default with a Solarized Light alternative.
