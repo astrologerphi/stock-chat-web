@@ -266,7 +266,7 @@ async function runAnalysis(symbol: string, keys: Keys) {
         ...[...scores].flatMap(([id, s]) => [symbol, id, s.score, s.reason]),
       );
     }
-    await replaceTags(db, symbol, mergeTags(llmTags, stock.tagEdits));
+    await replaceTags(db, symbol, mergeTags(llmTags, stock.tagEdits), 'llm');
   });
 }
 

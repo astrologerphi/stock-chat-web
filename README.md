@@ -7,8 +7,9 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 ## Features
 
 - **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days, loaded asynchronously per page), float / outstanding ratio, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
-- **Stock detail**: quote and facts, score dials with reasons, editable tags (manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
+- **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
+- **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
 - **Settings**: Gemini key with connection test, model picker, FMP key with test, page size and universe sync.
 - **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
 - **LLM tasks**: two kinds, both using the FMP profile and the news from the last 30 days as context and returning structured JSON.
@@ -68,6 +69,7 @@ Cross-Origin-Embedder-Policy: require-corp
 | --- | --- |
 | `stocks` | One row per company: screener fields, float, heat, profile / leaders / diagrams (JSON text), LLM introduction and run metadata, `active` flag for delisted symbols |
 | `stock_tags` | `(symbol, tag, position)`: effective tags = LLM tags merged with manual edits (`stocks.tag_edits`) |
+| `tags` | Tag library: `(key, name, blocked, created_at)`; `key` is the lower-cased name. LLM tags are mapped onto it (new ones are added, blocked ones dropped). Filled from `stock_tags` on first open |
 | `stock_scores` | `(symbol, prompt_id, score, reason)` |
 | `config` | JSON values: `prompts`, `meta` (last sync time) |
 
@@ -83,6 +85,7 @@ src/
   api.ts                          façade used by the UI; validates input and calls the data layer
   data/db.ts                      Turso wasm connection, schema, transactions, config
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
+  data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
   data/sync.ts                    universe sync from the FMP screener + float data
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue
   data/fmp.ts, data/gemini.ts     API clients
@@ -130,7 +133,13 @@ Loaded asynchronously: the heat of each company on the current page, and the num
 - Company leaders, from FMP when available.
 - Everything shown in the list row.
 - Score reasons (LLM).
-- Tags (LLM); the user can delete tags or add new ones.
+- Tags (LLM); the user can delete tags or add new ones, picking from the tag library.
+
+### Tag management
+
+- A page lists every tag used by any company, so the user can add or delete tags.
+- Deleting a tag also deletes it from every company, and LLM runs no longer add it.
+- When adding tags on the stock detail page, the user selects from the managed tags (or creates a new one, which joins the library).
 - SVG diagrams (LLM): Gemini returns SVG markup directly. Each diagram has a horizontal and a vertical version, displayed according to the screen.
 - Company introduction (LLM).
 

@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS stock_tags (
 );
 CREATE INDEX IF NOT EXISTS stock_tags_tag ON stock_tags (tag);
 
+-- Tag library. key is the lower-cased name; blocked tags were deleted by the user and are never re-added by LLM runs.
+CREATE TABLE IF NOT EXISTS tags (
+  key TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  blocked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS stock_scores (
   symbol TEXT NOT NULL,
   prompt_id TEXT NOT NULL,
@@ -179,7 +187,32 @@ async function open(): Promise<Database> {
   const { connect } = await import('@tursodatabase/database-wasm');
   const db = await connect(DB_FILE);
   await db.exec(SCHEMA);
+  await backfillTagLibrary(db);
   return db;
+}
+
+/** Adds every tag already used by a company to the library (covers databases created before the library existed). */
+async function backfillTagLibrary(db: Database) {
+  const [used, known] = await Promise.all([
+    db.all('SELECT DISTINCT tag FROM stock_tags') as Promise<{ tag: string }[]>,
+    db.all('SELECT key FROM tags') as Promise<{ key: string }[]>,
+  ]);
+  const keys = new Set(known.map((r) => r.key));
+  const now = new Date().toISOString();
+  const missing: [string, string][] = [];
+  for (const { tag } of used) {
+    const key = tag.toLowerCase();
+    if (keys.has(key)) continue;
+    keys.add(key);
+    missing.push([key, tag]);
+  }
+  for (let i = 0; i < missing.length; i += 200) {
+    const batch = missing.slice(i, i + 200);
+    await db.run(
+      `INSERT INTO tags (key, name, created_at) VALUES ${batch.map(() => '(?, ?, ?)').join(', ')} ON CONFLICT(key) DO NOTHING`,
+      ...batch.flatMap(([key, name]) => [key, name, now]),
+    );
+  }
 }
 
 let dbPromise: Promise<Database> | undefined;

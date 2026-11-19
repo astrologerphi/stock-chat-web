@@ -69,6 +69,15 @@ export interface Facet {
   count: number;
 }
 
+export interface TagInfo {
+  name: string;
+  /** Active companies carrying the tag. */
+  count: number;
+  /** Deleted by the user; LLM runs will not add it again until it is restored. */
+  blocked: boolean;
+  createdAt: string;
+}
+
 export interface PromptItem {
   id: string;
   title: string;
