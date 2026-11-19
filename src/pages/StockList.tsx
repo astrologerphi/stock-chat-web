@@ -3,7 +3,7 @@ import { api, type ListParams } from '../api.ts';
 import { countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { navigate } from '../router.ts';
 import { useSettings } from '../settings.ts';
-import { isActive, runAnalysis, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
@@ -176,7 +176,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const scorePrompts = prompts?.scorePrompts ?? [];
   const rows = data?.items ?? [];
   const pageSymbols = rows.map((r) => r.symbol);
-  const pageBusy = pageSymbols.filter((s) => { const t = tasks.get(s); return t && isActive(t); }).length;
+  const pageBusy = pageSymbols.filter((s) => { const t = tasks.get(taskKey('analysis', s)); return t && isActive(t); }).length;
   const hasFilters = params.q || params.exchange.length || params.country.length || params.tags.length;
   const needsKeys = !settings.fmpKey;
   const empty = sync && sync.total === 0;
@@ -276,8 +276,8 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         <button
           class="btn btn--primary"
           disabled={!rows.length || pageBusy > 0}
-          onClick={() => runAnalysis(pageSymbols)}
-          title="Run the LLM task for every stock on this page"
+          onClick={() => runAnalysis(pageSymbols, 'analysis')}
+          title="Score, tag and introduce every stock on this page. Generate diagrams from a stock's detail page."
         >
           {pageBusy ? <Spinner /> : <I.Sparkle size={16} />}
           {pageBusy ? `Analysing ${pageBusy}…` : `Analyse page (${rows.length})`}
@@ -334,7 +334,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
                   ))
                 : rows.map((r, i) => {
                     const cap = money(r.marketCap);
-                    const task = tasks.get(r.symbol);
+                    const task = tasks.get(taskKey('analysis', r.symbol));
                     const busy = task && isActive(task);
                     return (
                       <tr key={r.symbol} class={busy ? 'is-busy' : ''} onClick={() => navigate(`/stock/${encodeURIComponent(r.symbol)}`)} style={{ '--i': i }}>
@@ -403,10 +403,10 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
                           <button
                             class="icon-btn"
                             disabled={!!busy}
-                            title={`Run LLM analysis for ${r.symbol}`}
+                            title={`Score, tag and introduce ${r.symbol}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              void runAnalysis([r.symbol]);
+                              void runAnalysis([r.symbol], 'analysis');
                             }}
                           >
                             <I.Bolt size={15} />

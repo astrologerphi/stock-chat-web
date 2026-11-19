@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'preact/hooks';
+import type { ThinkingLevel } from './data/gemini.ts';
 
 export interface Settings {
   geminiKey: string;
   geminiModel: string;
+  geminiThinking: ThinkingLevel;
   fmpKey: string;
   pageSize: number;
 }
 
 const STORAGE_KEY = 'meridian.settings';
-const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', fmpKey: '', pageSize: 25 };
+const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiThinking: 'default', fmpKey: '', pageSize: 25 };
 
 function load(): Settings {
   try {

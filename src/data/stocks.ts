@@ -1,6 +1,7 @@
 import type { Database } from '@tursodatabase/database-wasm';
 import { all, get, parseJson, placeholders, readStock, run, transaction, type StockDoc } from './db.ts';
 import type { Fmp } from './fmp.ts';
+import { cleanTag, resolveTags } from './tags.ts';
 import { HttpError, mapLimit } from './util.ts';
 import type { Facet, ListResponse, ScoreEntry, StockDetail, StockRow } from '../types.ts';
 
@@ -280,7 +281,7 @@ export function normalizeTags(tags: unknown[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const t of tags) {
-    const tag = String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, 32);
+    const tag = cleanTag(t);
     const key = tag.toLowerCase();
     if (!tag || seen.has(key)) continue;
     seen.add(key);
@@ -294,14 +295,17 @@ export function mergeTags(llmTags: string[], edits: { added: string[]; removed: 
   return normalizeTags([...llmTags.filter((t) => !removed.has(t.toLowerCase())), ...edits.added]);
 }
 
-/** Replaces a stock's tag list. Must run inside a transaction. */
-export async function replaceTags(db: Database, symbol: string, tags: string[]) {
+/** Replaces a stock's tag list via the tag library (see resolveTags) and returns what was stored. Must run inside a transaction. */
+export async function replaceTags(db: Database, symbol: string, input: string[], source: 'llm' | 'user'): Promise<string[]> {
+  const tags = await resolveTags(db, input, source);
   await db.run('DELETE FROM stock_tags WHERE symbol = ?', symbol);
-  if (!tags.length) return;
-  await db.run(
-    `INSERT INTO stock_tags (symbol, tag, position) VALUES ${tags.map(() => '(?, ?, ?)').join(', ')}`,
-    ...tags.flatMap((tag, i) => [symbol, tag, i]),
-  );
+  if (tags.length) {
+    await db.run(
+      `INSERT INTO stock_tags (symbol, tag, position) VALUES ${tags.map(() => '(?, ?, ?)').join(', ')}`,
+      ...tags.flatMap((tag, i) => [symbol, tag, i]),
+    );
+  }
+  return tags;
 }
 
 /** Saves the user's tag list, remembering manual additions/removals so they survive future LLM runs. */
@@ -309,16 +313,15 @@ export async function setTags(symbol: string, input: unknown[]): Promise<string[
   const row = await get<{ llm_tags: string }>('SELECT llm_tags FROM stocks WHERE symbol = ?', symbol);
   if (!row) return null;
   const llmTags = parseJson<string[]>(row.llm_tags, []);
-  const tags = normalizeTags(input).slice(0, 30);
-  const lower = new Set(tags.map((t) => t.toLowerCase()));
-  const llmLower = new Set(llmTags.map((t) => t.toLowerCase()));
-  const edits = {
-    added: tags.filter((t) => !llmLower.has(t.toLowerCase())),
-    removed: llmTags.filter((t) => !lower.has(t.toLowerCase())),
-  };
-  await transaction(async (db) => {
+  return transaction(async (db) => {
+    const tags = await replaceTags(db, symbol, normalizeTags(input).slice(0, 30), 'user');
+    const lower = new Set(tags.map((t) => t.toLowerCase()));
+    const llmLower = new Set(llmTags.map((t) => t.toLowerCase()));
+    const edits = {
+      added: tags.filter((t) => !llmLower.has(t.toLowerCase())),
+      removed: llmTags.filter((t) => !lower.has(t.toLowerCase())),
+    };
     await updateStock(symbol, { tag_edits: JSON.stringify(edits) }, db);
-    await replaceTags(db, symbol, tags);
+    return tags;
   });
-  return tags;
 }

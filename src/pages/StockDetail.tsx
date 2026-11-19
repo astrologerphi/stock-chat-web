@@ -1,13 +1,13 @@
 import type { ComponentChildren } from 'preact';
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { compact, countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { useSettings } from '../settings.ts';
-import { isActive, runAnalysis, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FloatGauge, Heat, Markdown, Modal, ScoreDial, Spinner, svgUrl } from '../components/ui.tsx';
-import type { Diagram, PromptConfig, StockDetail as Detail } from '../types.ts';
+import type { Diagram, PromptConfig, StockDetail as Detail, TagInfo, TaskStatus } from '../types.ts';
 
 function Fact({ label, children }: { label: string; children: ComponentChildren }) {
   return (
@@ -21,22 +21,66 @@ function Fact({ label, children }: { label: string; children: ComponentChildren 
 function TagEditor({ symbol, tags, onChange }: { symbol: string; tags: string[]; onChange: (t: string[]) => void }) {
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [library, setLibrary] = useState<TagInfo[]>([]);
+  const [active, setActive] = useState(-1);
+  const listId = `tag-options-${symbol}`;
+
+  const loadLibrary = () => api.tagLibrary().then(setLibrary).catch(() => {});
+  useEffect(() => void loadLibrary(), []);
+
+  const q = draft.trim();
+  const key = q.toLowerCase();
+  const onStock = new Set(tags.map((t) => t.toLowerCase()));
+  const exact = library.find((t) => t.name.toLowerCase() === key);
+  const options = useMemo(() => {
+    const free = library.filter((t) => !t.blocked && !onStock.has(t.name.toLowerCase()));
+    const hits = key ? free.filter((t) => t.name.toLowerCase().includes(key)) : free;
+    const starts = (t: TagInfo) => (t.name.toLowerCase().startsWith(key) ? 0 : 1);
+    const list: { name: string; count: number; kind: 'pick' | 'create' | 'restore' }[] = hits
+      .sort((a, b) => starts(a) - starts(b) || b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 8)
+      .map((t) => ({ name: t.name, count: t.count, kind: 'pick' }));
+    if (q && !onStock.has(key) && (!exact || exact.blocked)) list.push({ name: exact?.name ?? q, count: 0, kind: exact ? 'restore' : 'create' });
+    return list;
+  }, [library, tags, key]);
+
   const save = async (next: string[]) => {
     setSaving(true);
     try {
       onChange((await api.setTags(symbol, next)).tags);
+      void loadLibrary();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), 'error');
     } finally {
       setSaving(false);
     }
   };
-  const add = () => {
-    const t = draft.trim();
-    if (!t) return;
+  const add = (name: string) => {
+    const t = name.trim();
     setDraft('');
-    if (!tags.some((x) => x.toLowerCase() === t.toLowerCase())) void save([...tags, t]);
+    setActive(-1);
+    if (t && !onStock.has(t.toLowerCase())) void save([...tags, t]);
   };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      setOpen(true);
+      if (!options.length) return;
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((i) => (i < 0 && step < 0 ? options.length - 1 : (i + step + options.length) % options.length));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = open && active >= 0 ? options[active] : undefined;
+      add(pick ? pick.name : (exact && !exact.blocked ? exact.name : q));
+    } else if (e.key === 'Escape') {
+      if (open) e.stopPropagation();
+      setOpen(false);
+      setActive(-1);
+    }
+  };
+  const showList = open && (options.length > 0 || !!q);
+
   return (
     <div class={`tag-editor${saving ? ' is-saving' : ''}`}>
       {tags.map((t) => (
@@ -46,49 +90,132 @@ function TagEditor({ symbol, tags, onChange }: { symbol: string; tags: string[];
           </a>
         </Chip>
       ))}
-      <form
-        class="tag-editor__add"
-        onSubmit={(e) => {
-          e.preventDefault();
-          add();
-        }}
-      >
-        <I.Plus size={13} />
-        <input value={draft} maxLength={32} placeholder="Add tag" onInput={(e) => setDraft(e.currentTarget.value)} onBlur={add} />
-      </form>
+      <div class="tag-combo">
+        <label class="tag-editor__add">
+          <I.Plus size={13} />
+          <input
+            role="combobox"
+            aria-label="Add tag"
+            aria-autocomplete="list"
+            aria-expanded={showList}
+            aria-controls={listId}
+            aria-activedescendant={showList && active >= 0 ? `${listId}-${active}` : undefined}
+            value={draft}
+            maxLength={32}
+            placeholder="Add tag"
+            onFocus={() => {
+              setOpen(true);
+              void loadLibrary();
+            }}
+            onBlur={() => {
+              setOpen(false);
+              setActive(-1);
+            }}
+            onInput={(e) => {
+              setDraft(e.currentTarget.value);
+              setOpen(true);
+              setActive(e.currentTarget.value.trim() ? 0 : -1);
+            }}
+            onKeyDown={onKeyDown}
+          />
+        </label>
+        {showList && (
+          <div class="popover tag-combo__pop">
+            <ul class="popover__list" id={listId} role="listbox" aria-label="Tag suggestions">
+              {options.map((o, i) => (
+                <li
+                  key={`${o.kind}:${o.name}`}
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={i === active}
+                  class={`popover__row tag-combo__opt${i === active ? ' is-active' : ''}${o.kind !== 'pick' ? ' is-create' : ''}`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => add(o.name)}
+                >
+                  {o.kind === 'pick' ? <I.Tag size={13} /> : <I.Plus size={13} />}
+                  <span class="popover__label">
+                    {o.kind === 'create' ? `Create “${o.name}”` : o.kind === 'restore' ? `Restore deleted tag “${o.name}”` : o.name}
+                  </span>
+                  {o.kind === 'pick' && <span class="tag-combo__count num">{o.count}</span>}
+                </li>
+              ))}
+            </ul>
+            {!options.length && <p class="popover__empty">“{q}” is already on this company</p>}
+            <div class="popover__foot">
+              <a class="link-btn" href="#/tags" onMouseDown={(e) => e.preventDefault()}>
+                Manage tags
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function Diagrams({ diagrams }: { diagrams: Diagram[] }) {
+function Diagrams({ symbol, diagrams, promptCount, task }: { symbol: string; diagrams: Diagram[]; promptCount: number; task?: TaskStatus }) {
   const [active, setActive] = useState(0);
   const [zoom, setZoom] = useState<Diagram | null>(null);
   const close = useCallback(() => setZoom(null), []);
+  const busy = task ? isActive(task) : false;
   const d = diagrams[Math.min(active, diagrams.length - 1)];
-  if (!d) return null;
+  const noun = `${promptCount} ${promptCount === 1 ? 'diagram' : 'diagrams'}`;
   return (
-    <section class="card panel">
-      <header class="panel__head">
-        <h2 class="panel__title">
-          <I.Grid size={16} /> Diagrams
-        </h2>
-        {diagrams.length > 1 && (
-          <div class="seg">
-            {diagrams.map((x, i) => (
-              <button key={x.promptId} class={i === active ? 'is-on' : ''} onClick={() => setActive(i)}>
-                {x.title}
-              </button>
-            ))}
-          </div>
+    <section class="card panel" aria-busy={busy}>
+      <header class="panel__head panel__head--wrap">
+        <div>
+          <h2 class="panel__title">
+            <I.Grid size={16} /> Diagrams
+          </h2>
+          <p class="panel__sub">Generated on demand, separately from the analysis.</p>
+        </div>
+        {promptCount > 0 ? (
+          <button class="btn" disabled={busy} onClick={() => runAnalysis([symbol], 'diagrams')}>
+            {busy ? <Spinner /> : d ? <I.Refresh size={15} /> : <I.Sparkle size={15} />}
+            {busy ? (task?.state === 'queued' ? 'Queued…' : 'Designing…') : d ? 'Regenerate' : `Generate ${noun}`}
+          </button>
+        ) : (
+          <a class="link-btn" href="#/prompts">
+            Add diagram prompts
+          </a>
         )}
       </header>
-      <button class={`diagram${d.horizontal ? ' has-h' : ''}${d.vertical ? ' has-v' : ''}`} onClick={() => setZoom(d)} title="Open full screen">
-        {d.horizontal && <img class="diagram__h" src={svgUrl(d.horizontal)} alt={`${d.title} (landscape)`} />}
-        {d.vertical && <img class="diagram__v" src={svgUrl(d.vertical)} alt={`${d.title} (portrait)`} />}
-        <span class="diagram__zoom">
-          <I.Maximize size={14} />
-        </span>
-      </button>
+      {task?.state === 'error' && <div class="banner banner--error">Diagram generation failed: {task.error}</div>}
+      {d && diagrams.length > 1 && (
+        <div class="seg diagram-tabs">
+          {diagrams.map((x, i) => (
+            <button key={x.promptId} class={i === active ? 'is-on' : ''} onClick={() => setActive(i)}>
+              {x.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {d ? (
+        <button
+          class={`diagram${d.horizontal ? ' has-h' : ''}${d.vertical ? ' has-v' : ''}${busy ? ' is-stale' : ''}`}
+          onClick={() => setZoom(d)}
+          title="Open full screen"
+        >
+          {d.horizontal && <img class="diagram__h" src={svgUrl(d.horizontal)} alt={`${d.title} (landscape)`} />}
+          {d.vertical && <img class="diagram__v" src={svgUrl(d.vertical)} alt={`${d.title} (portrait)`} />}
+          <span class="diagram__zoom">
+            <I.Maximize size={14} />
+          </span>
+        </button>
+      ) : (
+        <div class={`diagram-empty${busy ? ' is-busy' : ''}`}>
+          {busy ? <Spinner /> : <I.Grid size={22} />}
+          <p class="diagram-empty__title">{busy ? `Designing ${noun}…` : 'No diagrams yet'}</p>
+          <p class="muted small">
+            {busy
+              ? 'Usually a minute or two. You can keep browsing; they will appear here when ready.'
+              : promptCount > 0
+                ? `Generate ${noun} from your diagram prompts. Takes a minute or two.`
+                : 'Add a diagram prompt to start generating SVG diagrams.'}
+          </p>
+        </div>
+      )}
       {zoom && (
         <Modal onClose={close} label={zoom.title}>
           <div class={`diagram diagram--full${zoom.horizontal ? ' has-h' : ''}${zoom.vertical ? ' has-v' : ''}`}>
@@ -108,7 +235,8 @@ export function StockDetail({ symbol }: { symbol: string }) {
   const [error, setError] = useState<string | null>(null);
   const [heatLoading, setHeatLoading] = useState(false);
   const tasks = useTasks();
-  const task = tasks.get(symbol);
+  const task = tasks.get(taskKey('analysis', symbol));
+  const diagramTask = tasks.get(taskKey('diagrams', symbol));
   const busy = task ? isActive(task) : false;
 
   const load = useCallback(async () => {
@@ -200,7 +328,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
               )}
             </div>
           )}
-          <button class="btn btn--primary" disabled={busy} onClick={() => runAnalysis([data.symbol])}>
+          <button class="btn btn--primary" disabled={busy} onClick={() => runAnalysis([data.symbol], 'analysis')}>
             {busy ? <Spinner /> : <I.Sparkle size={16} />}
             {busy ? (task?.state === 'queued' ? 'Queued…' : 'Analysing…') : analysed ? 'Re-run analysis' : 'Run analysis'}
           </button>
@@ -213,7 +341,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
       {data.llmError && !busy && <div class="banner banner--error">Last analysis failed: {data.llmError}</div>}
       {busy && (
         <div class="banner banner--busy">
-          <Spinner /> Gemini is reading the filings, news and profile for {data.symbol}. Diagrams take a minute or two.
+          <Spinner /> Gemini is reading the news and profile for {data.symbol} to score, tag and introduce it.
         </div>
       )}
 
@@ -285,7 +413,9 @@ export function StockDetail({ symbol }: { symbol: string }) {
             )}
           </section>
 
-          {data.diagrams.length > 0 && <Diagrams diagrams={data.diagrams} />}
+          {(data.diagrams.length > 0 || (prompts?.svgPrompts.length ?? 0) > 0) && (
+            <Diagrams symbol={data.symbol} diagrams={data.diagrams} promptCount={prompts?.svgPrompts.length ?? 0} task={diagramTask} />
+          )}
 
           <section class="card panel">
             <header class="panel__head">

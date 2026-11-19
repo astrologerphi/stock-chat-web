@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.ts';
 import { toast } from './toast.ts';
-import type { TaskStatus } from './types.ts';
+import type { TaskKind, TaskStatus } from './types.ts';
 
 type Listener = (tasks: Map<string, TaskStatus>) => void;
 
@@ -12,23 +12,29 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 const active = (t: TaskStatus) => t.state === 'queued' || t.state === 'running';
 
+export const taskKey = (kind: TaskKind, symbol: string) => `${kind}:${symbol}`;
+
+const LABEL: Record<TaskKind, { done: string; failed: string; one: string; many: string }> = {
+  analysis: { done: 'Analysis complete for', failed: 'analysis failed', one: 'analysis', many: 'analyses' },
+  diagrams: { done: 'Diagrams ready for', failed: 'diagrams failed', one: 'diagram run', many: 'diagram runs' },
+};
+
 function publish(next: TaskStatus[]) {
   const prev = tasks;
-  tasks = new Map(next.map((t) => [t.symbol, t]));
-  const finished: string[] = [];
-  const failed: TaskStatus[] = [];
-  for (const [symbol, t] of tasks) {
-    const before = prev.get(symbol);
-    if (before && active(before) && !active(t)) {
-      finished.push(symbol);
-      if (t.state === 'error') failed.push(t);
-    }
+  tasks = new Map(next.map((t) => [taskKey(t.kind, t.symbol), t]));
+  const finished: TaskStatus[] = [];
+  for (const [key, t] of tasks) {
+    const before = prev.get(key);
+    if (before && active(before) && !active(t)) finished.push(t);
   }
   for (const l of listeners) l(tasks);
-  if (finished.length) for (const l of completionListeners) l(finished);
-  for (const f of failed) toast(`${f.symbol}: ${f.error ?? 'analysis failed'}`, 'error');
-  const ok = finished.length - failed.length;
-  if (ok > 0) toast(`Analysis complete for ${ok === 1 ? finished.find((s) => !failed.some((f) => f.symbol === s)) : `${ok} stocks`}`, 'success');
+  if (finished.length) for (const l of completionListeners) l([...new Set(finished.map((t) => t.symbol))]);
+  for (const kind of Object.keys(LABEL) as TaskKind[]) {
+    const mine = finished.filter((t) => t.kind === kind);
+    const ok = mine.filter((t) => t.state !== 'error');
+    for (const f of mine) if (f.state === 'error') toast(`${f.symbol}: ${f.error ?? LABEL[kind].failed}`, 'error');
+    if (ok.length) toast(`${LABEL[kind].done} ${ok.length === 1 ? ok[0]!.symbol : `${ok.length} stocks`}`, 'success');
+  }
 }
 
 async function poll() {
@@ -41,11 +47,13 @@ async function poll() {
   if ([...tasks.values()].some(active)) timer = setTimeout(poll, 2000);
 }
 
-export async function runAnalysis(symbols: string[]) {
+/** `analysis` writes scores, tags and introduction; `diagrams` only (re)generates SVG diagrams. */
+export async function runAnalysis(symbols: string[], kind: TaskKind = 'analysis') {
   try {
-    const res = await api.runLlm(symbols);
+    const res = await api.runLlm(symbols, kind);
     publish(res.tasks);
-    toast(res.queued ? `Queued ${res.queued} ${res.queued === 1 ? 'analysis' : 'analyses'}` : 'Already in progress', 'info');
+    const l = LABEL[kind];
+    toast(res.queued ? `Queued ${res.queued} ${res.queued === 1 ? l.one : l.many}` : 'Already in progress', 'info');
     poll();
   } catch (e) {
     toast(e instanceof Error ? e.message : String(e), 'error');

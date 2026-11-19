@@ -3,6 +3,23 @@ import { HttpError } from './util.ts';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 export const DEFAULT_MODEL = 'gemini-3.8-flash';
 
+export const THINKING_LEVELS = ['default', 'minimal', 'low', 'medium', 'high'] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/** Gemini 2.x has no thinking levels, only a token budget. */
+export const usesThinkingBudget = (model: string) => /^(models\/)?gemini-2\./i.test(model);
+
+const BUDGETS: Record<Exclude<ThinkingLevel, 'default'>, number> = { minimal: 0, low: 1024, medium: 8192, high: 24576 };
+
+/** Maps a level to the model family's thinkingConfig; 'default' leaves the choice to the model. */
+export function thinkingConfig(model: string, level: ThinkingLevel | undefined): object | undefined {
+  if (!level || level === 'default' || !THINKING_LEVELS.includes(level)) return undefined;
+  if (!usesThinkingBudget(model)) return { thinkingLevel: level };
+  // 2.5 Pro can't switch thinking off; 128 is its minimum budget.
+  if (level === 'minimal' && /pro/i.test(model)) return { thinkingBudget: 128 };
+  return { thinkingBudget: BUDGETS[level] };
+}
+
 export interface GeminiModel {
   id: string;
   displayName: string;
@@ -54,24 +71,35 @@ export async function generateJson<T>(opts: {
   prompt: string;
   schema: object;
   maxOutputTokens?: number;
+  thinking?: ThinkingLevel;
 }): Promise<T> {
   requireKey(opts.key);
   const model = (opts.model || DEFAULT_MODEL).replace(/^models\//, '');
-  const res = await fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'x-goog-api-key': opts.key, 'content-type': 'application/json' },
-    signal: AbortSignal.timeout(300_000),
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: opts.system }] },
-      contents: [{ role: 'user', parts: [{ text: opts.prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseJsonSchema: opts.schema,
-        maxOutputTokens: opts.maxOutputTokens ?? 60_000,
-        temperature: 0.7,
-      },
-    }),
-  });
+  const request = (thinking: object | undefined) =>
+    fetch(`${BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': opts.key, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(300_000),
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: opts.system }] },
+        contents: [{ role: 'user', parts: [{ text: opts.prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseJsonSchema: opts.schema,
+          maxOutputTokens: opts.maxOutputTokens ?? 60_000,
+          temperature: 0.7,
+          ...(thinking ? { thinkingConfig: thinking } : {}),
+        },
+      }),
+    });
+  const thinking = thinkingConfig(model, opts.thinking);
+  let res = await request(thinking);
+  if (!res.ok && thinking && res.status === 400) {
+    // Not every model supports every level (e.g. "minimal" on Pro models); fall back to the model's default.
+    const err = await geminiError(res);
+    if (!/thinking/i.test(err.message)) throw err;
+    res = await request(undefined);
+  }
   if (!res.ok) throw await geminiError(res);
   const body = (await res.json()) as {
     candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];

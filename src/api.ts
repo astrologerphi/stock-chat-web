@@ -4,9 +4,10 @@ import { enqueue, getTaskStatuses } from './data/llm.ts';
 import { getPrompts, savePrompts } from './data/prompts.ts';
 import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setTags, tagFacets } from './data/stocks.ts';
 import { getSyncStatus, startSync } from './data/sync.ts';
+import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { Facet, ListResponse, PromptConfig, StockDetail, SyncStatus, TaskStatus } from './types.ts';
+import type { Facet, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -27,7 +28,7 @@ export interface ListParams {
 
 const keys = () => {
   const s = getSettings();
-  return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.geminiModel.trim() || DEFAULT_MODEL };
+  return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.geminiModel.trim() || DEFAULT_MODEL, thinking: s.geminiThinking };
 };
 
 const listParam = (values: string[]) => values.map((v) => v.trim()).filter(Boolean).slice(0, 50);
@@ -68,6 +69,11 @@ export const api = {
   countries: (): Promise<Facet[]> => countryFacets(),
   exchanges: (): Promise<Facet[]> => exchangeFacets(),
   tags: (): Promise<Facet[]> => tagFacets(),
+  /** Every tag in the library, including deleted (blocked) ones. */
+  tagLibrary: (): Promise<TagInfo[]> => listTagLibrary(),
+  addTag: (name: string) => addTag(name),
+  /** Removes the tag from every company and blocks it; resolves to the number of companies changed. */
+  deleteTag: (name: string) => deleteTag(name),
   prompts: (): Promise<PromptConfig> => getPrompts(),
   savePrompts: (p: PromptConfig): Promise<PromptConfig> => savePrompts(p),
   syncStatus: (): Promise<SyncStatus> => getSyncStatus(),
@@ -76,13 +82,16 @@ export const api = {
     startSync(keys().fmp);
     return getSyncStatus();
   },
-  async runLlm(symbols: string[]) {
+  async runLlm(symbols: string[], kind: TaskKind = 'analysis') {
     const list = symbols.map(String).slice(0, 200);
     if (!list.length) throw new HttpError(400, 'No symbols provided');
     const k = keys();
     if (!k.gemini) throw new HttpError(400, 'Gemini API key is missing. Add it in Settings.');
     if (!k.fmp) throw new HttpError(400, 'FMP API key is missing. Add it in Settings.');
-    return { queued: enqueue(list, k), tasks: getTaskStatuses() };
+    if (kind === 'diagrams' && !(await getPrompts()).svgPrompts.length) {
+      throw new HttpError(400, 'No diagram prompts configured. Add one on the Prompts page.');
+    }
+    return { queued: enqueue(list, k, kind), tasks: getTaskStatuses() };
   },
   async llmStatus(): Promise<TaskStatus[]> {
     return getTaskStatuses();

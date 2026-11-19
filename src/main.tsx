@@ -9,6 +9,7 @@ import * as I from './components/icons.tsx';
 import { Logo, Spinner, Toasts } from './components/ui.tsx';
 import { Prompts } from './pages/Prompts.tsx';
 import { Settings } from './pages/Settings.tsx';
+import { Tags } from './pages/Tags.tsx';
 import { StockDetail } from './pages/StockDetail.tsx';
 import { StockList } from './pages/StockList.tsx';
 
@@ -19,10 +20,10 @@ function TaskIndicator() {
   const queued = all.filter((t) => t.state === 'queued').length;
   if (!running && !queued) return null;
   return (
-    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol}: ${t.state}`).join('\n')}>
+    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
       <Spinner size={12} />
       <span>
-        {running} analysing{queued ? ` · ${queued} queued` : ''}
+        {running} running{queued ? ` · ${queued} queued` : ''}
       </span>
     </span>
   );
@@ -70,11 +71,14 @@ function App() {
 
   const stockMatch = /^\/stock\/(.+)$/.exec(route.path);
   let page;
-  let section: 'market' | 'prompts' | 'settings' = 'market';
+  let section: 'market' | 'prompts' | 'tags' | 'settings' = 'market';
   if (stockMatch) page = <StockDetail key={stockMatch[1]} symbol={decodeURIComponent(stockMatch[1]!)} />;
   else if (route.path === '/prompts') {
     page = <Prompts />;
     section = 'prompts';
+  } else if (route.path === '/tags') {
+    page = <Tags />;
+    section = 'tags';
   } else if (route.path === '/settings') {
     page = <Settings />;
     section = 'settings';
@@ -94,6 +98,9 @@ function App() {
           </a>
           <a href="#/prompts" class={section === 'prompts' ? 'is-active' : ''}>
             <I.Quill size={15} /> <span>Prompts</span>
+          </a>
+          <a href="#/tags" class={section === 'tags' ? 'is-active' : ''}>
+            <I.Tag size={15} /> <span>Tags</span>
           </a>
           <a href="#/settings" class={section === 'settings' ? 'is-active' : ''}>
             <I.Settings size={15} /> <span>Settings</span>
