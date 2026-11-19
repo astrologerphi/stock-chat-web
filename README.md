@@ -6,7 +6,7 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 
 ## Features
 
-- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days, loaded asynchronously per page), float / outstanding ratio, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days, loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
@@ -85,6 +85,7 @@ src/
   api.ts                          façade used by the UI; validates input and calls the data layer
   data/db.ts                      Turso wasm connection, schema, transactions, config
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
+  data/heat.ts                    background "Refresh heat" job for every company
   data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
   data/sync.ts                    universe sync from the FMP screener + float data
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue

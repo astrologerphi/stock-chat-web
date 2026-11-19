@@ -1,5 +1,6 @@
 import { DEFAULT_MODEL, listModels } from './data/gemini.ts';
 import { Fmp } from './data/fmp.ts';
+import { getHeatJob, startHeatJob, stopHeatJob } from './data/heat.ts';
 import { enqueue, getTaskStatuses } from './data/llm.ts';
 import { getPrompts, savePrompts } from './data/prompts.ts';
 import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setTags, tagFacets } from './data/stocks.ts';
@@ -7,7 +8,7 @@ import { getSyncStatus, startSync } from './data/sync.ts';
 import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { Facet, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
+import type { Facet, HeatJobStatus, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -54,6 +55,16 @@ export const api = {
   },
   async heat(symbols: string[]) {
     return refreshHeat(new Fmp(keys().fmp), symbols);
+  },
+  heatJob: (): HeatJobStatus => getHeatJob(),
+  /** Refreshes the heat of every company in the background; reports progress if a run is already going. */
+  startHeatJob(): HeatJobStatus {
+    startHeatJob(keys().fmp);
+    return getHeatJob();
+  },
+  stopHeatJob(): HeatJobStatus {
+    stopHeatJob();
+    return getHeatJob();
   },
   async detail(symbol: string): Promise<StockDetail> {
     const key = keys().fmp;
