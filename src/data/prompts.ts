@@ -1,5 +1,5 @@
-import { Config } from './db.ts';
-import type { PromptConfig, PromptItem } from '../shared/types.ts';
+import { getConfig, setConfig } from './db.ts';
+import type { PromptConfig, PromptItem } from '../types.ts';
 
 export const DEFAULT_PROMPTS: PromptConfig = {
   scorePrompts: [
@@ -44,8 +44,7 @@ export const DEFAULT_PROMPTS: PromptConfig = {
 const ID_RE = /^[a-z0-9_]{1,40}$/;
 
 export async function getPrompts(): Promise<PromptConfig> {
-  const doc = await Config.findOne({ key: 'prompts' }).lean<{ prompts?: PromptConfig }>();
-  return doc?.prompts ?? DEFAULT_PROMPTS;
+  return (await getConfig<PromptConfig>('prompts')) ?? DEFAULT_PROMPTS;
 }
 
 function cleanItems(input: unknown, max: number): PromptItem[] {
@@ -72,6 +71,6 @@ export async function savePrompts(input: Partial<PromptConfig>): Promise<PromptC
     svgPrompts: cleanItems(input.svgPrompts, 6),
     introPrompt: String(input.introPrompt ?? '').trim().slice(0, 4000),
   };
-  await Config.updateOne({ key: 'prompts' }, { $set: { prompts } }, { upsert: true });
+  await setConfig('prompts', prompts);
   return prompts;
 }

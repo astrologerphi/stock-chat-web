@@ -22,7 +22,7 @@ export function Avatar({ symbol, src, size = 36 }: { symbol: string; src?: strin
   return (
     <span class="avatar" style={{ width: `${size}px`, height: `${size}px`, '--h': h }}>
       {src && !failed ? (
-        <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} />
+        <img src={src} alt="" loading="lazy" crossOrigin="anonymous" onError={() => setFailed(true)} />
       ) : (
         <span class="avatar__mono" style={{ fontSize: `${size * 0.36}px` }}>
           {symbol.slice(0, 2)}

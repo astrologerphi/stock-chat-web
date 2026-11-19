@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.ts';
 import { toast } from './toast.ts';
-import type { TaskStatus } from '../shared/types.ts';
+import type { TaskStatus } from './types.ts';
 
 type Listener = (tasks: Map<string, TaskStatus>) => void;
 

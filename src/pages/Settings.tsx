@@ -5,7 +5,7 @@ import { updateSettings, useSettings } from '../settings.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Spinner } from '../components/ui.tsx';
-import type { SyncStatus } from '../../shared/types.ts';
+import type { SyncStatus } from '../types.ts';
 
 type TestState = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; message: string } | { state: 'error'; message: string };
 
@@ -116,7 +116,7 @@ export function Settings() {
         <h1 class="display display--page">
           Keys, models <em>&amp; preferences.</em>
         </h1>
-        <p class="lede">API keys are kept only in this browser’s localStorage and sent with each request — the server never stores them.</p>
+        <p class="lede">Everything stays in this browser. API keys live in localStorage and go straight to Gemini and FMP; market data and analyses are kept in a local SQLite database.</p>
       </header>
 
       <section class="card panel">

@@ -1,71 +1,85 @@
 import * as esbuild from 'esbuild';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { serve } from './serve.ts';
 
 const watch = process.argv.includes('--watch');
 const outdir = 'dist';
 
 await rm(outdir, { recursive: true, force: true });
-await mkdir(`${outdir}/public`, { recursive: true });
+await mkdir(outdir, { recursive: true });
 
-const copyHtml: esbuild.Plugin = {
-  name: 'copy-html',
+/*
+ * @tursodatabase/database-wasm loads its engine with `new URL('./turso.wasm32-wasi.wasm', import.meta.url)` and
+ * starts `new Worker(new URL('./worker.js', import.meta.url))`. esbuild leaves those URLs alone, so we emit both
+ * files next to the bundle (chunks go to the dist root, keeping `import.meta.url` relative paths valid) and
+ * rewrite the names: the wasm gets a content hash so it can be cached forever.
+ */
+const tursoDist = path.dirname(createRequire(import.meta.url).resolve('@tursodatabase/database-wasm'));
+const wasm = await readFile(path.join(tursoDist, 'turso.wasm32-wasi.wasm'));
+const wasmName = `turso-${createHash('sha256').update(wasm).digest('hex').slice(0, 10)}.wasm`;
+const workerName = 'turso-worker.js';
+
+const tursoAssets: esbuild.Plugin = {
+  name: 'turso-assets',
+  setup(build) {
+    build.onLoad({ filter: /database-wasm[\\/]dist[\\/]index-default\.js$/ }, async (args) => {
+      const source = await readFile(args.path, 'utf8');
+      const contents = source.replace("'./turso.wasm32-wasi.wasm'", `'./${wasmName}'`).replace("'./worker.js'", `'./${workerName}'`);
+      if (!contents.includes(wasmName) || !contents.includes(workerName)) {
+        throw new Error('Could not rewrite @tursodatabase/database-wasm asset URLs — the package layout changed.');
+      }
+      return { contents, loader: 'js' };
+    });
+  },
+};
+
+const copyStatic: esbuild.Plugin = {
+  name: 'copy-static',
   setup(build) {
     build.onEnd(async () => {
-      await copyFile('src/client/index.html', `${outdir}/public/index.html`);
-      await copyFile('src/client/favicon.svg', `${outdir}/public/favicon.svg`);
+      await copyFile('src/index.html', `${outdir}/index.html`);
+      await copyFile('src/favicon.svg', `${outdir}/favicon.svg`);
     });
   },
 };
 
-let server: ChildProcess | undefined;
-const restartServer: esbuild.Plugin = {
-  name: 'restart-server',
-  setup(build) {
-    build.onEnd((result) => {
-      if (!watch || result.errors.length) return;
-      server?.kill();
-      server = spawn(process.execPath, ['--enable-source-maps', `${outdir}/server.js`], { stdio: 'inherit' });
-    });
-  },
-};
-
-const client: esbuild.BuildOptions = {
-  entryPoints: { app: 'src/client/main.tsx' },
-  outdir: `${outdir}/public`,
+const common: esbuild.BuildOptions = {
   bundle: true,
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
-  jsx: 'automatic',
-  jsxImportSource: 'preact',
   minify: !watch,
   sourcemap: true,
-  loader: { '.woff2': 'file' },
   logLevel: 'info',
-  plugins: [copyHtml],
 };
 
-const serverBuild: esbuild.BuildOptions = {
-  entryPoints: ['src/server/index.ts'],
-  outfile: `${outdir}/server.js`,
-  bundle: true,
-  format: 'esm',
-  platform: 'node',
-  target: 'node24',
-  packages: 'external',
-  sourcemap: true,
-  logLevel: 'info',
-  plugins: [restartServer],
+const app: esbuild.BuildOptions = {
+  ...common,
+  entryPoints: { app: 'src/main.tsx' },
+  outdir,
+  splitting: true,
+  chunkNames: '[name]-[hash]',
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
+  loader: { '.woff2': 'file' },
+  plugins: [tursoAssets, copyStatic],
 };
+
+const worker: esbuild.BuildOptions = {
+  ...common,
+  entryPoints: [path.join(tursoDist, 'worker.js')],
+  outfile: `${outdir}/${workerName}`,
+};
+
+await writeFile(`${outdir}/${wasmName}`, wasm);
 
 if (watch) {
-  const contexts = await Promise.all([esbuild.context(client), esbuild.context(serverBuild)]);
+  const contexts = await Promise.all([esbuild.context(app), esbuild.context(worker)]);
   await Promise.all(contexts.map((ctx) => ctx.watch()));
-  process.on('SIGINT', () => {
-    server?.kill();
-    process.exit(0);
-  });
+  serve(outdir);
 } else {
-  await Promise.all([esbuild.build(client), esbuild.build(serverBuild)]);
+  await Promise.all([esbuild.build(app), esbuild.build(worker)]);
 }

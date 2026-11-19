@@ -7,7 +7,7 @@ import { isActive, runAnalysis, useOnTasksFinished, useTasks } from '../tasks.ts
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FloatGauge, Heat, Markdown, Modal, ScoreDial, Spinner, svgUrl } from '../components/ui.tsx';
-import type { Diagram, PromptConfig, StockDetail as Detail } from '../../shared/types.ts';
+import type { Diagram, PromptConfig, StockDetail as Detail } from '../types.ts';
 
 function Fact({ label, children }: { label: string; children: ComponentChildren }) {
   return (
