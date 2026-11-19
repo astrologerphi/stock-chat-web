@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Spinner } from '../components/ui.tsx';
-import type { PromptConfig, PromptItem } from '../../shared/types.ts';
+import type { PromptConfig, PromptItem } from '../types.ts';
 
 const newId = () => `p_${Math.random().toString(36).slice(2, 10)}`;
 

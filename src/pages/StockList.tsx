@@ -7,7 +7,7 @@ import { isActive, runAnalysis, useOnTasksFinished, useTasks } from '../tasks.ts
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
-import type { Facet, ListResponse, PromptConfig, StockRow, SyncStatus } from '../../shared/types.ts';
+import type { Facet, ListResponse, PromptConfig, StockRow, SyncStatus } from '../types.ts';
 
 const HEAT_TTL_MS = 12 * 3600_000;
 const csv = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);

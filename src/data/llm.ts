@@ -1,10 +1,10 @@
-import { Stock, type StockDoc } from './db.ts';
+import { transaction, type StockDoc } from './db.ts';
 import { Fmp, type FmpNews } from './fmp.ts';
 import { generateJson } from './gemini.ts';
 import { getPrompts } from './prompts.ts';
-import { mergeTags, normalizeTags, refreshProfile } from './stocks.ts';
+import { mergeTags, normalizeTags, refreshProfile, replaceTags, updateStock } from './stocks.ts';
 import { isoDate } from './util.ts';
-import type { Diagram, PromptConfig, ScoreEntry, TaskStatus } from '../shared/types.ts';
+import type { Diagram, PromptConfig, TaskStatus } from '../types.ts';
 
 interface Keys {
   gemini: string;
@@ -61,7 +61,7 @@ function pump() {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[llm] ${job.symbol}:`, message);
         setTask(job.symbol, 'error', message);
-        await Stock.updateOne({ symbol: job.symbol }, { $set: { llmError: message } }).catch(() => {});
+        await updateStock(job.symbol, { llm_error: message }).catch(() => {});
       })
       .finally(() => {
         running--;
@@ -219,11 +219,11 @@ async function runTask(symbol: string, keys: Keys) {
     schema: buildSchema(prompts),
   });
 
-  const scores: Record<string, ScoreEntry> = { ...stock.scores };
+  const scores = new Map<string, { score: number; reason: string }>();
   for (const s of result.scores ?? []) {
     if (!prompts.scorePrompts.some((p) => p.id === s.id)) continue;
     const score = Math.max(0, Math.min(10, Math.round(Number(s.score))));
-    if (Number.isFinite(score)) scores[s.id] = { score, reason: String(s.reason ?? '').trim() };
+    if (Number.isFinite(score)) scores.set(s.id, { score, reason: String(s.reason ?? '').trim() });
   }
 
   const diagrams: Diagram[] = [];
@@ -236,19 +236,27 @@ async function runTask(symbol: string, keys: Keys) {
   }
 
   const llmTags = normalizeTags(result.tags ?? []).slice(0, 10);
-  await Stock.updateOne(
-    { symbol },
-    {
-      $set: {
-        scores,
-        llmTags,
-        tags: mergeTags(llmTags, stock.tagEdits ?? { added: [], removed: [] }),
+  await transaction(async (db) => {
+    await updateStock(
+      symbol,
+      {
+        llm_tags: JSON.stringify(llmTags),
         introduction: String(result.introduction ?? '').trim(),
-        diagrams,
-        lastLlmRunAt: new Date(),
-        llmModel: keys.model,
-        llmError: null,
+        diagrams: JSON.stringify(diagrams),
+        last_llm_run_at: new Date().toISOString(),
+        llm_model: keys.model,
+        llm_error: null,
       },
-    },
-  );
+      db,
+    );
+    // Scores for prompts that were not part of this run are kept.
+    if (scores.size) {
+      await db.run(
+        `INSERT INTO stock_scores (symbol, prompt_id, score, reason) VALUES ${[...scores].map(() => '(?, ?, ?, ?)').join(', ')}
+         ON CONFLICT(symbol, prompt_id) DO UPDATE SET score = excluded.score, reason = excluded.reason`,
+        ...[...scores].flatMap(([id, s]) => [symbol, id, s.score, s.reason]),
+      );
+    }
+    await replaceTags(db, symbol, mergeTags(llmTags, stock.tagEdits));
+  });
 }
