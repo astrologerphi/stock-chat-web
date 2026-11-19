@@ -6,7 +6,7 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 
 ## Features
 
-- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days, loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
@@ -112,7 +112,7 @@ Each row contains:
 | Icon, symbol, name | | no |
 | Market cap | sortable | no |
 | Exchange | filterable | no |
-| Heat | sortable; number of news in the last month | no |
+| Heat | sortable; number of news in the last month, as a thermometer (low < 30 ≤ medium < 100 ≤ hot < 500 ≤ explosive) | no |
 | Float / total shares | sortable by percentage | no |
 | Country | filter whose options are sorted by company count | no |
 | Score columns | one per score prompt; integer 0–10 | yes |
@@ -174,3 +174,7 @@ Both use the news, company description and other data fetched from FMP as contex
 - localStorage for secrets.
 - No backend: a single static page hosted on Vercel.
 - Aesthetics: distinctive, sans-serif only; dark by default with a Solarized Light alternative.
+
+## Credits
+
+Flag emoji on platforms without native flags (Windows) come from [country-flag-emoji-polyfill](https://github.com/talkjs/country-flag-emoji-polyfill) (MIT), which bundles a flags-only subset of [Twemoji](https://github.com/twitter/twemoji) graphics licensed CC-BY 4.0. The font is self-hosted from the build and only loads where needed.

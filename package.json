@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@tursodatabase/database-wasm": "^0.8.3",
+    "country-flag-emoji-polyfill": "^0.1.10",
     "preact": "^11.2.0"
   },
   "devDependencies": {

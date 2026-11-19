@@ -66,10 +66,17 @@ export function scoreTone(score: number | null | undefined): string {
   return 'low';
 }
 
-export function heatLevel(count: number | null | undefined): number {
-  if (count == null) return 0;
-  const steps = [3, 20, 80, 250, 600];
-  return steps.filter((s) => count >= s).length;
+export type HeatTier = 'none' | 'low' | 'medium' | 'hot' | 'explosive';
+
+export const HEAT_TIER_LABEL: Record<HeatTier, string> = { none: 'Not loaded', low: 'Low', medium: 'Medium', hot: 'Hot', explosive: 'Explosive' };
+
+/** Temperature for a 30-day news count: under 30 low, under 100 medium, under 500 hot, otherwise explosive. */
+export function heatTier(count: number | null | undefined): HeatTier {
+  if (count == null) return 'none';
+  if (count < 30) return 'low';
+  if (count < 100) return 'medium';
+  if (count < 500) return 'hot';
+  return 'explosive';
 }
 
 export function hue(seed: string): number {

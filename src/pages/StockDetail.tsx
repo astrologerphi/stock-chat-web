@@ -353,7 +353,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
           </span>
         </Fact>
         <Fact label="Heat · 30d news">
-          <Heat count={data.heat} loading={heatLoading} />
+          <Heat count={data.heat} loading={heatLoading} label />
         </Fact>
         <Fact label="Float / outstanding">
           <FloatGauge ratio={data.floatRatio} size={26} />

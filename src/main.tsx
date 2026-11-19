@@ -1,4 +1,6 @@
 import { render } from 'preact';
+import { polyfillCountryFlagEmojis } from 'country-flag-emoji-polyfill';
+import flagFont from 'country-flag-emoji-polyfill/dist/TwemojiCountryFlags.woff2';
 import { useEffect } from 'preact/hooks';
 import './styles.css';
 import { useRoute } from './router.ts';
@@ -122,5 +124,8 @@ function App() {
     </>
   );
 }
+
+// Windows ships no flag emoji; this loads a flags-only font there and is a no-op elsewhere.
+polyfillCountryFlagEmojis('Twemoji Country Flags', flagFont);
 
 render(<App />, document.getElementById('app')!);
