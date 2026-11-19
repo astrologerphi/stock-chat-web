@@ -2417,6 +2417,18 @@ main {
   font-size: 14px;
 }
 
+.field__seg {
+  justify-self: start;
+}
+
+.field-hint {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 .field-row {
   display: flex;
   flex-wrap: wrap;

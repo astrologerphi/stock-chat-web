@@ -28,7 +28,7 @@ export interface ListParams {
 
 const keys = () => {
   const s = getSettings();
-  return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.geminiModel.trim() || DEFAULT_MODEL };
+  return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.geminiModel.trim() || DEFAULT_MODEL, thinking: s.geminiThinking };
 };
 
 const listParam = (values: string[]) => values.map((v) => v.trim()).filter(Boolean).slice(0, 50);

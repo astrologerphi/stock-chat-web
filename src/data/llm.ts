@@ -1,6 +1,6 @@
 import { transaction, type StockDoc } from './db.ts';
 import { Fmp, type FmpNews } from './fmp.ts';
-import { generateJson } from './gemini.ts';
+import { generateJson, type ThinkingLevel } from './gemini.ts';
 import { getPrompts } from './prompts.ts';
 import { mergeTags, normalizeTags, refreshProfile, replaceTags, updateStock } from './stocks.ts';
 import { isoDate } from './util.ts';
@@ -10,6 +10,7 @@ interface Keys {
   gemini: string;
   fmp: string;
   model: string;
+  thinking: ThinkingLevel;
 }
 
 interface LlmResult {
@@ -233,6 +234,7 @@ async function runAnalysis(symbol: string, keys: Keys) {
   const result = await generateJson<LlmResult>({
     key: keys.gemini,
     model: keys.model,
+    thinking: keys.thinking,
     system: SYSTEM_ANALYSIS,
     prompt: buildAnalysisPrompt(stock, news, prompts),
     schema: buildAnalysisSchema(prompts),
@@ -278,6 +280,7 @@ async function runDiagrams(symbol: string, keys: Keys) {
   const result = await generateJson<LlmResult>({
     key: keys.gemini,
     model: keys.model,
+    thinking: keys.thinking,
     system: SYSTEM_DIAGRAMS,
     prompt: buildDiagramPrompt(stock, news, prompts),
     schema: buildDiagramSchema(prompts),

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
+import { THINKING_LEVELS, usesThinkingBudget, type ThinkingLevel } from '../data/gemini.ts';
 import { fullTime, relTime } from '../format.ts';
 import { updateSettings, useSettings } from '../settings.ts';
 import { toast } from '../toast.ts';
@@ -8,6 +9,8 @@ import { Spinner } from '../components/ui.tsx';
 import type { SyncStatus } from '../types.ts';
 
 type TestState = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; message: string } | { state: 'error'; message: string };
+
+const THINKING_LABELS: Record<ThinkingLevel, string> = { default: 'Default', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High' };
 
 const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'];
 
@@ -144,6 +147,22 @@ export function Settings() {
             </select>
             <I.ChevronDown size={14} />
           </div>
+        </div>
+        <div class="field">
+          <label id="thinking-label">Thinking level</label>
+          <div class="seg field__seg" role="group" aria-labelledby="thinking-label">
+            {THINKING_LEVELS.map((level) => (
+              <button key={level} class={s.geminiThinking === level ? 'is-on' : ''} aria-pressed={s.geminiThinking === level} onClick={() => updateSettings({ geminiThinking: level })}>
+                {THINKING_LABELS[level]}
+              </button>
+            ))}
+          </div>
+          <p class="field-hint">
+            {usesThinkingBudget(s.geminiModel)
+              ? 'Gemini 2.5 uses a token budget: Minimal turns thinking off where the model allows, Low ≈ 1k, Medium ≈ 8k, High ≈ 24k tokens.'
+              : 'More thinking gives deeper analysis but runs slower and costs more.'}{' '}
+            If the model doesn’t support a level, it falls back to its default.
+          </p>
         </div>
         <div class="field-row">
           <button class="btn" onClick={testGemini} disabled={!s.geminiKey || geminiTest.state === 'testing'}>
