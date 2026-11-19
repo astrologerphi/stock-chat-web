@@ -103,6 +103,20 @@ export interface TaskStatus {
   updatedAt: string;
 }
 
+export interface HeatJobStatus {
+  running: boolean;
+  /** Companies processed so far, out of `total` (those not refreshed in the last hour). */
+  done: number;
+  total: number;
+  updated: number;
+  failed: number;
+  /** Companies left out because their heat was refreshed in the last hour. */
+  skipped: number;
+  cancelled: boolean;
+  error: string | null;
+  finishedAt: string | null;
+}
+
 export interface SyncStatus {
   running: boolean;
   phase: string;

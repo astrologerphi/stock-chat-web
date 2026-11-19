@@ -7,7 +7,7 @@ import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '..
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
-import type { Facet, ListResponse, PromptConfig, StockRow, SyncStatus } from '../types.ts';
+import type { Facet, HeatJobStatus, ListResponse, PromptConfig, StockRow, SyncStatus } from '../types.ts';
 
 const HEAT_TTL_MS = 12 * 3600_000;
 const csv = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
@@ -65,6 +65,10 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const [exchanges, setExchanges] = useState<Facet[] | null>(null);
   const [tagFacets, setTagFacets] = useState<Facet[] | null>(null);
   const [sync, setSync] = useState<SyncStatus | null>(null);
+  const [heatJob, setHeatJob] = useState<HeatJobStatus>(() => api.heatJob());
+  const heatJobRunning = useRef(heatJob.running);
+  heatJobRunning.current = heatJob.running;
+  const lastHeatReload = useRef(0);
   const [search, setSearch] = useState(params.q);
   const tasks = useTasks();
   const autoSynced = useRef(false);
@@ -72,7 +76,8 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
 
   const loadHeat = useCallback(
     async (rows: StockRow[]) => {
-      if (!settings.fmpKey) return;
+      // A full refresh is already fetching these; let it fill them in.
+      if (!settings.fmpKey || heatJobRunning.current) return;
       const stale = rows.filter((r) => r.heat == null || !r.heatUpdatedAt || Date.now() - Date.parse(r.heatUpdatedAt) > HEAT_TTL_MS).map((r) => r.symbol);
       if (!stale.length) return;
       setHeatLoading(new Set(stale));
@@ -144,6 +149,37 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
     }, 1500);
     return () => clearTimeout(t);
   }, [sync, load, loadFacets]);
+
+  useEffect(() => {
+    if (!heatJob.running) return;
+    const t = setTimeout(() => {
+      const next = api.heatJob();
+      setHeatJob(next);
+      if (next.running) {
+        // Show new values as they land without reloading the table every tick.
+        if (Date.now() - lastHeatReload.current > 6000) {
+          lastHeatReload.current = Date.now();
+          void load(true);
+        }
+        return;
+      }
+      void load(true);
+      if (next.error) toast(`Heat refresh failed: ${next.error}`, 'error');
+      else if (next.cancelled) toast(`Heat refresh stopped · ${next.updated.toLocaleString('en-US')} updated`);
+      else if (!next.total) toast('Heat is already fresh for every company', 'success');
+      else toast(`Heat refreshed for ${next.updated.toLocaleString('en-US')} companies${next.failed ? ` · ${next.failed.toLocaleString('en-US')} failed` : ''}`, next.failed ? 'info' : 'success');
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [heatJob, load]);
+
+  const startHeat = () => {
+    try {
+      lastHeatReload.current = Date.now();
+      setHeatJob(api.startHeatJob());
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  };
 
   useOnTasksFinished(
     useCallback(() => {
@@ -245,6 +281,25 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         </section>
       )}
 
+      {heatJob.running && (
+        <section class="syncbar card" aria-live="polite">
+          <div class="syncbar__head">
+            <Spinner />
+            <span>
+              {heatJob.total ? `Refreshing heat · ${heatJob.done.toLocaleString('en-US')} of ${heatJob.total.toLocaleString('en-US')} companies` : 'Finding companies to refresh'}
+              {heatJob.failed > 0 && <span class="muted"> · {heatJob.failed.toLocaleString('en-US')} failed</span>}
+            </span>
+            <span class="num muted">{heatJob.total ? Math.floor((heatJob.done / heatJob.total) * 100) : 0}%</span>
+            <button class="link-btn" onClick={() => setHeatJob(api.stopHeatJob())}>
+              Stop
+            </button>
+          </div>
+          <div class="progress">
+            <i style={{ width: `${Math.max(2, heatJob.total ? (heatJob.done / heatJob.total) * 100 : 0)}%` }} />
+          </div>
+        </section>
+      )}
+
       <section class="toolbar">
         <label class="search">
           <I.Search size={16} />
@@ -273,6 +328,15 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           </button>
         ) : null}
         <span class="toolbar__spacer" />
+        <button
+          class="btn"
+          disabled={!settings.fmpKey || heatJob.running || !!sync?.running || !sync?.total}
+          onClick={startHeat}
+          title={settings.fmpKey ? 'Count the last 30 days of news for every company. Companies refreshed in the last hour are skipped.' : 'Add an FMP key in Settings first'}
+        >
+          {heatJob.running ? <Spinner /> : <I.Flame size={16} />}
+          {heatJob.running ? 'Refreshing heat…' : 'Refresh heat'}
+        </button>
         <button
           class="btn btn--primary"
           disabled={!rows.length || pageBusy > 0}
