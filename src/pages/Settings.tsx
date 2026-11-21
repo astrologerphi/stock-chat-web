@@ -12,7 +12,43 @@ type TestState = { state: 'idle' } | { state: 'testing' } | { state: 'ok'; messa
 
 const THINKING_LABELS: Record<ThinkingLevel, string> = { default: 'Default', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High' };
 
-const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'];
+type ModelOption = { id: string; batch: boolean };
+const FALLBACK_MODELS: ModelOption[] = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'].map((id) => ({ id, batch: true }));
+
+function ModelSelect({ id, value, models, onChange }: { id: string; value: string; models: string[]; onChange: (v: string) => void }) {
+  const options = models.includes(value) ? models : [value, ...models];
+  return (
+    <div class="select">
+      <select id={id} value={value} onChange={(e) => onChange(e.currentTarget.value)}>
+        {options.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+      <I.ChevronDown size={14} />
+    </div>
+  );
+}
+
+function ThinkingField({ id, label, model, value, onChange, slowNote }: { id: string; label: string; model: string; value: ThinkingLevel; onChange: (v: ThinkingLevel) => void; slowNote: string }) {
+  return (
+    <div class="field">
+      <label id={id}>{label}</label>
+      <div class="seg field__seg" role="group" aria-labelledby={id}>
+        {THINKING_LEVELS.map((level) => (
+          <button key={level} class={value === level ? 'is-on' : ''} aria-pressed={value === level} onClick={() => onChange(level)}>
+            {THINKING_LABELS[level]}
+          </button>
+        ))}
+      </div>
+      <p class="field-hint">
+        {usesThinkingBudget(model) ? 'Gemini 2.5 uses a token budget: Minimal turns thinking off where the model allows, Low ≈ 1k, Medium ≈ 8k, High ≈ 24k tokens.' : slowNote} If the model
+        doesn’t support a level, it falls back to its default.
+      </p>
+    </div>
+  );
+}
 
 function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   const [shown, setShown] = useState(false);
@@ -52,7 +88,7 @@ function TestResult({ test }: { test: TestState }) {
 
 export function Settings() {
   const s = useSettings();
-  const [models, setModels] = useState<string[]>(FALLBACK_MODELS);
+  const [models, setModels] = useState<ModelOption[]>(FALLBACK_MODELS);
   const [geminiTest, setGeminiTest] = useState<TestState>({ state: 'idle' });
   const [fmpTest, setFmpTest] = useState<TestState>({ state: 'idle' });
   const [sync, setSync] = useState<SyncStatus | null>(null);
@@ -63,7 +99,7 @@ export function Settings() {
     const t = setTimeout(() => {
       api
         .models(s.geminiKey)
-        .then((m) => m.length && setModels(m.map((x) => x.id)))
+        .then((m) => m.length && setModels(m))
         .catch(() => setModels(FALLBACK_MODELS));
     }, 400);
     return () => clearTimeout(t);
@@ -110,7 +146,8 @@ export function Settings() {
     }
   };
 
-  const modelOptions = models.includes(s.geminiModel) ? models : [s.geminiModel, ...models];
+  const allModels = models.map((m) => m.id);
+  const batchModels = models.filter((m) => m.batch).map((m) => m.id);
 
   return (
     <div class="page narrow">
@@ -136,40 +173,41 @@ export function Settings() {
           <SecretInput value={s.geminiKey} onChange={(geminiKey) => { updateSettings({ geminiKey }); setGeminiTest({ state: 'idle' }); }} placeholder="Paste your Gemini API key" />
         </div>
         <div class="field">
-          <label>Model</label>
-          <div class="select">
-            <select value={s.geminiModel} onChange={(e) => updateSettings({ geminiModel: e.currentTarget.value })}>
-              {modelOptions.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-            <I.ChevronDown size={14} />
-          </div>
+          <label for="gemini-model">Model</label>
+          <ModelSelect id="gemini-model" value={s.geminiModel} models={allModels} onChange={(geminiModel) => updateSettings({ geminiModel })} />
         </div>
-        <div class="field">
-          <label id="thinking-label">Thinking level</label>
-          <div class="seg field__seg" role="group" aria-labelledby="thinking-label">
-            {THINKING_LEVELS.map((level) => (
-              <button key={level} class={s.geminiThinking === level ? 'is-on' : ''} aria-pressed={s.geminiThinking === level} onClick={() => updateSettings({ geminiThinking: level })}>
-                {THINKING_LABELS[level]}
-              </button>
-            ))}
-          </div>
-          <p class="field-hint">
-            {usesThinkingBudget(s.geminiModel)
-              ? 'Gemini 2.5 uses a token budget: Minimal turns thinking off where the model allows, Low ≈ 1k, Medium ≈ 8k, High ≈ 24k tokens.'
-              : 'More thinking gives deeper analysis but runs slower and costs more.'}{' '}
-            If the model doesn’t support a level, it falls back to its default.
-          </p>
-        </div>
+        <ThinkingField
+          id="thinking-label"
+          label="Thinking level"
+          model={s.geminiModel}
+          value={s.geminiThinking}
+          onChange={(geminiThinking) => updateSettings({ geminiThinking })}
+          slowNote="More thinking gives deeper analysis but runs slower and costs more."
+        />
         <div class="field-row">
           <button class="btn" onClick={testGemini} disabled={!s.geminiKey || geminiTest.state === 'testing'}>
             <I.Bolt size={15} /> Test connection
           </button>
           <TestResult test={geminiTest} />
         </div>
+        <div class="divider" />
+        <div class="field-title">Batch analysis</div>
+        <p class="field-hint settings-sub">
+          Used by “Batch analyse page”, which sends one Gemini Batch API job at about half the price. Single-stock runs and diagrams keep using the model above.
+        </p>
+        <div class="field">
+          <label for="batch-model">Batch model</label>
+          <ModelSelect id="batch-model" value={s.batchModel} models={batchModels} onChange={(batchModel) => updateSettings({ batchModel })} />
+          <p class="field-hint">Only models that accept batch jobs are listed.</p>
+        </div>
+        <ThinkingField
+          id="batch-thinking-label"
+          label="Batch thinking level"
+          model={s.batchModel}
+          value={s.batchThinking}
+          onChange={(batchThinking) => updateSettings({ batchThinking })}
+          slowNote="More thinking gives deeper analysis and costs more; batches aren’t waited on, so speed matters less."
+        />
       </section>
 
       <section class="card panel">
@@ -196,7 +234,7 @@ export function Settings() {
           <div>
             <div class="field-title">Market universe</div>
             <div class="muted small">
-              {sync ? `${sync.total.toLocaleString('en-US')} companies · synced ` : ''}
+              {sync ? `${sync.total.toLocaleString('en-US')} companies · ${sync.etfs.toLocaleString('en-US')} ETFs · synced ` : ''}
               <span title={fullTime(sync?.lastSyncedAt)}>{sync ? relTime(sync.lastSyncedAt) : '…'}</span>
             </div>
           </div>
@@ -213,7 +251,7 @@ export function Settings() {
             <h2 class="panel__title">
               <I.Rows size={16} /> Display
             </h2>
-            <p class="panel__sub">Stocks per page — also the batch size of “Analyse page”.</p>
+            <p class="panel__sub">Stocks per page — also the size of a “Batch analyse page” job.</p>
           </div>
         </header>
         <div class="field-row">

@@ -3,12 +3,13 @@ import { all, get, parseJson, placeholders, readStock, run, transaction, type St
 import type { Fmp } from './fmp.ts';
 import { cleanTag, resolveTags } from './tags.ts';
 import { HttpError, mapLimit } from './util.ts';
-import type { Facet, ListResponse, ScoreEntry, StockDetail, StockRow } from '../types.ts';
+import type { Facet, ListKind, ListResponse, ScoreEntry, StockDetail, StockRow } from '../types.ts';
 
 const HEAT_TTL_MS = 12 * 3600_000;
 const PROFILE_TTL_MS = 24 * 3600_000;
 
 export interface ListQuery {
+  kind: ListKind;
   page: number;
   pageSize: number;
   sort: string;
@@ -103,8 +104,8 @@ function toDetail(d: StockDoc, scores: Record<string, ScoreEntry>, tags: string[
 }
 
 export async function listStocks(q: ListQuery): Promise<ListResponse> {
-  const where = ['s.active = 1'];
-  const args: unknown[] = [];
+  const where = ['s.active = 1', 's.is_etf = ?'];
+  const args: unknown[] = [q.kind === 'etfs' ? 1 : 0];
   if (q.exchanges.length) {
     where.push(`s.exchange IN (${placeholders(q.exchanges.length)})`);
     args.push(...q.exchanges);
@@ -155,19 +156,22 @@ export async function listStocks(q: ListQuery): Promise<ListResponse> {
   };
 }
 
-async function facet(sql: string): Promise<Facet[]> {
-  const rows = await all<{ value: string; count: number }>(sql);
+async function facet(sql: string, ...args: unknown[]): Promise<Facet[]> {
+  const rows = await all<{ value: string; count: number }>(sql, ...args);
   return rows.filter((r) => r.value).map((r) => ({ value: String(r.value), count: Number(r.count) }));
 }
 
-const columnFacet = (column: 'country' | 'exchange') =>
-  facet(`SELECT ${column} AS value, COUNT(*) AS count FROM stocks WHERE active = 1 AND ${column} <> '' GROUP BY ${column} ORDER BY count DESC, value ASC`);
+const columnFacet = (column: 'country' | 'exchange', kind: ListKind) =>
+  facet(
+    `SELECT ${column} AS value, COUNT(*) AS count FROM stocks WHERE active = 1 AND is_etf = ? AND ${column} <> '' GROUP BY ${column} ORDER BY count DESC, value ASC`,
+    kind === 'etfs' ? 1 : 0,
+  );
 
-export const countryFacets = () => columnFacet('country');
-export const exchangeFacets = () => columnFacet('exchange');
+export const countryFacets = () => columnFacet('country', 'stocks');
+export const exchangeFacets = (kind: ListKind) => columnFacet('exchange', kind);
 export const tagFacets = () =>
   facet(
-    'SELECT t.tag AS value, COUNT(*) AS count FROM stock_tags t JOIN stocks s ON s.symbol = t.symbol WHERE s.active = 1 GROUP BY t.tag ORDER BY count DESC, value ASC',
+    'SELECT t.tag AS value, COUNT(*) AS count FROM stock_tags t JOIN stocks s ON s.symbol = t.symbol WHERE s.active = 1 AND s.is_etf = 0 GROUP BY t.tag ORDER BY count DESC, value ASC',
   );
 
 /** Updates the given `stocks` columns. Column names are internal constants, never user input. */

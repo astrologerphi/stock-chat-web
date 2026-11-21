@@ -1,25 +1,25 @@
 import { get, getConfig, setConfig, transaction } from './db.ts';
-import { Fmp, type FmpFloat } from './fmp.ts';
+import { Fmp, type FmpFloat, type FmpScreenerRow } from './fmp.ts';
 import type { SyncStatus } from '../types.ts';
 
 /** Rows per multi-row INSERT; keeps bound parameters well below SQLite's limit. */
 const BATCH = 200;
 
-const status: SyncStatus = { running: false, phase: 'idle', progress: 0, lastSyncedAt: null, error: null, total: 0 };
+const status: SyncStatus = { running: false, phase: 'idle', progress: 0, lastSyncedAt: null, error: null, total: 0, etfs: 0 };
 
 export async function getSyncStatus(): Promise<SyncStatus> {
-  const [meta, total] = await Promise.all([
+  const [meta, counts] = await Promise.all([
     getConfig<{ lastSyncedAt?: string }>('meta'),
-    get<{ n: number }>('SELECT COUNT(*) AS n FROM stocks WHERE active = 1'),
+    get<{ stocks: number | null; etfs: number | null }>('SELECT SUM(is_etf = 0) AS stocks, SUM(is_etf = 1) AS etfs FROM stocks WHERE active = 1'),
   ]);
-  return { ...status, total: Number(total?.n ?? 0), lastSyncedAt: meta?.lastSyncedAt ?? null };
+  return { ...status, total: Number(counts?.stocks ?? 0), etfs: Number(counts?.etfs ?? 0), lastSyncedAt: meta?.lastSyncedAt ?? null };
 }
 
 /** Starts a full universe sync in the background. Returns false if one is already running. */
 export function startSync(fmpKey: string): boolean {
   if (status.running) return false;
   const fmp = new Fmp(fmpKey);
-  Object.assign(status, { running: true, phase: 'Fetching listed companies', progress: 0.05, error: null });
+  Object.assign(status, { running: true, phase: 'Fetching listed companies and ETFs', progress: 0.05, error: null });
   runSync(fmp)
     .catch((err: unknown) => {
       status.error = err instanceof Error ? err.message : String(err);
@@ -29,7 +29,7 @@ export function startSync(fmpKey: string): boolean {
   return true;
 }
 
-const COMPANY_COLUMNS = ['symbol', 'name', 'image', 'exchange', 'exchange_full_name', 'country', 'sector', 'industry', 'market_cap', 'price'];
+const COMPANY_COLUMNS = ['symbol', 'name', 'image', 'exchange', 'exchange_full_name', 'country', 'sector', 'industry', 'market_cap', 'price', 'is_etf'];
 const FLOAT_COLUMNS = ['symbol', 'float_shares', 'outstanding_shares', 'float_ratio'];
 
 /** Builds a multi-row upsert that overwrites every column except the primary key. */
@@ -42,12 +42,16 @@ function upsertSql(columns: string[], rows: number, extraSet = '') {
 }
 
 async function runSync(fmp: Fmp) {
-  const rows = (await fmp.screener()).filter((r) => r.symbol && r.companyName);
+  const valid = (r: FmpScreenerRow) => !!(r.symbol && r.companyName);
+  const [stockRows, etfRows] = await Promise.all([fmp.screener(), fmp.etfScreener()]);
+  const rows = stockRows.filter(valid);
   if (!rows.length) throw new Error('FMP returned no listed companies');
-  const seen = new Set(rows.map((r) => r.symbol));
-  Object.assign(status, { phase: `Saving ${rows.length.toLocaleString()} companies`, progress: 0.2 });
+  const stockSymbols = new Set(rows.map((r) => r.symbol));
+  const etfs = etfRows.filter((r) => valid(r) && !stockSymbols.has(r.symbol));
+  const seen = new Set([...stockSymbols, ...etfs.map((r) => r.symbol)]);
+  Object.assign(status, { phase: `Saving ${rows.length.toLocaleString()} companies and ${etfs.length.toLocaleString()} ETFs`, progress: 0.2 });
 
-  const companies = rows.map((r) => [
+  const listing = (r: FmpScreenerRow, isEtf: boolean) => [
     r.symbol,
     r.companyName,
     `https://images.financialmodelingprep.com/symbol/${encodeURIComponent(r.symbol)}.png`,
@@ -58,7 +62,9 @@ async function runSync(fmp: Fmp) {
     r.industry ?? '',
     r.marketCap ?? null,
     r.price ?? null,
-  ]);
+    isEtf ? 1 : 0,
+  ];
+  const companies = [...rows.map((r) => listing(r, false)), ...etfs.map((r) => listing(r, true))];
   await transaction(async (db) => {
     for (let i = 0; i < companies.length; i += BATCH) {
       const chunk = companies.slice(i, i + BATCH);
@@ -74,7 +80,7 @@ async function runSync(fmp: Fmp) {
   const parallel = 4;
   for (let start = 0; start < 200; start += parallel) {
     const pages = await Promise.all(Array.from({ length: parallel }, (_, i) => fmp.floatPage(start + i, limit)));
-    for (const page of pages) for (const f of page) if (seen.has(f.symbol)) floats.set(f.symbol, f);
+    for (const page of pages) for (const f of page) if (stockSymbols.has(f.symbol)) floats.set(f.symbol, f);
     status.progress = Math.min(0.85, 0.4 + (start / 40) * 0.45);
     if (pages.some((p) => p.length < limit)) break;
   }
@@ -95,5 +101,5 @@ async function runSync(fmp: Fmp) {
   });
 
   await setConfig('meta', { lastSyncedAt: new Date().toISOString() });
-  console.log(`[sync] ${rows.length} companies, ${floats.size} float records`);
+  console.log(`[sync] ${rows.length} companies, ${etfs.length} ETFs, ${floats.size} float records`);
 }

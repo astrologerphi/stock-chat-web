@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, type ListParams } from '../api.ts';
 import { countryName, flag, fullTime, money, relTime } from '../format.ts';
-import { navigate } from '../router.ts';
+import { navigate, scrollToTop } from '../router.ts';
 import { useSettings } from '../settings.ts';
+import { isOpenBatch, useBatches, useOnBatchesFinished } from '../batches.ts';
 import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
-import { toast } from '../toast.ts';
+import { BatchBar, BatchModal } from '../components/BatchModal.tsx';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
-import type { Facet, HeatJobStatus, ListResponse, PromptConfig, StockRow, SyncStatus } from '../types.ts';
-
-const HEAT_TTL_MS = 12 * 3600_000;
-const csv = (v: string | null) => (v ? v.split(',').filter(Boolean) : []);
+import type { Facet, ListResponse, PromptConfig } from '../types.ts';
+import { csv, HeatButton, HeatJobBar, SortHeader, SyncBar, useHeatJob, useRowHeat, useSyncStatus } from './listing.tsx';
 
 function readParams(params: URLSearchParams, pageSize: number): ListParams {
   return {
@@ -37,20 +36,6 @@ function writeParams(p: ListParams, replace = false) {
   navigate('/', qs, replace);
 }
 
-function SortHeader(props: { label: string; sortKey: string; params: ListParams; title?: string; align?: 'right' }) {
-  const active = props.params.sort === props.sortKey;
-  const onClick = () =>
-    writeParams({ ...props.params, page: 1, sort: props.sortKey, order: active && props.params.order === 'desc' ? 'asc' : 'desc' });
-  return (
-    <th class={`sortable${active ? ' is-sorted' : ''}${props.align === 'right' ? ' right' : ''}`} title={props.title} aria-sort={active ? (props.params.order === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      <button onClick={onClick}>
-        <span>{props.label}</span>
-        <span class="sort-ind">{active ? props.params.order === 'asc' ? <I.ArrowUp size={12} /> : <I.ArrowDown size={12} /> : <I.ArrowDown size={12} />}</span>
-      </button>
-    </th>
-  );
-}
-
 export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const settings = useSettings();
   const params = useMemo(() => readParams(rawParams, settings.pageSize), [rawParams, settings.pageSize]);
@@ -59,41 +44,19 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [heatLoading, setHeatLoading] = useState<Set<string>>(new Set());
   const [prompts, setPrompts] = useState<PromptConfig | null>(null);
   const [countries, setCountries] = useState<Facet[] | null>(null);
   const [exchanges, setExchanges] = useState<Facet[] | null>(null);
   const [tagFacets, setTagFacets] = useState<Facet[] | null>(null);
-  const [sync, setSync] = useState<SyncStatus | null>(null);
-  const [heatJob, setHeatJob] = useState<HeatJobStatus>(() => api.heatJob());
-  const heatJobRunning = useRef(heatJob.running);
-  heatJobRunning.current = heatJob.running;
-  const lastHeatReload = useRef(0);
   const [search, setSearch] = useState(params.q);
   const tasks = useTasks();
+  const { batches } = useBatches();
+  const [batchSymbols, setBatchSymbols] = useState<string[] | null>(null);
   const autoSynced = useRef(false);
   const requestId = useRef(0);
+  const tableScroll = useRef<HTMLDivElement>(null);
 
-  const loadHeat = useCallback(
-    async (rows: StockRow[]) => {
-      // A full refresh is already fetching these; let it fill them in.
-      if (!settings.fmpKey || heatJobRunning.current) return;
-      const stale = rows.filter((r) => r.heat == null || !r.heatUpdatedAt || Date.now() - Date.parse(r.heatUpdatedAt) > HEAT_TTL_MS).map((r) => r.symbol);
-      if (!stale.length) return;
-      setHeatLoading(new Set(stale));
-      try {
-        const result = await api.heat(stale);
-        const map = new Map(result.map((r) => [r.symbol, r.heat]));
-        const now = new Date().toISOString();
-        setData((d) => d && { ...d, items: d.items.map((r) => (map.has(r.symbol) ? { ...r, heat: map.get(r.symbol) ?? null, heatUpdatedAt: now } : r)) });
-      } catch (e) {
-        toast(`Heat: ${e instanceof Error ? e.message : e}`, 'error');
-      } finally {
-        setHeatLoading(new Set());
-      }
-    },
-    [settings.fmpKey],
-  );
+  const { heatLoading, loadHeat } = useRowHeat(setData);
 
   const load = useCallback(
     async (silent = false) => {
@@ -125,68 +88,27 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   useEffect(() => {
     loadFacets();
     api.prompts().then(setPrompts).catch(() => {});
-    api.syncStatus().then(setSync).catch(() => {});
   }, [loadFacets]);
+
+  const { sync, startSync } = useSyncStatus(() => {
+    void load();
+    loadFacets();
+  });
+  const heat = useHeatJob('stocks', (silent) => void load(silent));
 
   // Kick off the first universe sync automatically once an FMP key is present.
   useEffect(() => {
     if (!sync || autoSynced.current || sync.running || sync.total > 0 || !settings.fmpKey) return;
     autoSynced.current = true;
-    api.startSync().then(setSync).catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'));
+    startSync();
   }, [sync, settings.fmpKey]);
 
-  useEffect(() => {
-    if (!sync?.running) return;
-    const t = setTimeout(async () => {
-      const next = await api.syncStatus().catch(() => sync);
-      setSync(next);
-      if (!next.running) {
-        if (next.error) toast(`Sync failed: ${next.error}`, 'error');
-        else toast(`Synced ${next.total.toLocaleString('en-US')} companies`, 'success');
-        void load();
-        loadFacets();
-      }
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [sync, load, loadFacets]);
-
-  useEffect(() => {
-    if (!heatJob.running) return;
-    const t = setTimeout(() => {
-      const next = api.heatJob();
-      setHeatJob(next);
-      if (next.running) {
-        // Show new values as they land without reloading the table every tick.
-        if (Date.now() - lastHeatReload.current > 6000) {
-          lastHeatReload.current = Date.now();
-          void load(true);
-        }
-        return;
-      }
-      void load(true);
-      if (next.error) toast(`Heat refresh failed: ${next.error}`, 'error');
-      else if (next.cancelled) toast(`Heat refresh stopped · ${next.updated.toLocaleString('en-US')} updated`);
-      else if (!next.total) toast('Heat is already fresh for every company', 'success');
-      else toast(`Heat refreshed for ${next.updated.toLocaleString('en-US')} companies${next.failed ? ` · ${next.failed.toLocaleString('en-US')} failed` : ''}`, next.failed ? 'info' : 'success');
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [heatJob, load]);
-
-  const startHeat = () => {
-    try {
-      lastHeatReload.current = Date.now();
-      setHeatJob(api.startHeatJob());
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), 'error');
-    }
-  };
-
-  useOnTasksFinished(
-    useCallback(() => {
-      void load(true);
-      api.tags().then(setTagFacets).catch(() => {});
-    }, [load]),
-  );
+  const onFinished = useCallback(() => {
+    void load(true);
+    api.tags().then(setTagFacets).catch(() => {});
+  }, [load]);
+  useOnTasksFinished(onFinished);
+  useOnBatchesFinished(onFinished);
 
   useEffect(() => {
     if (search === params.q) return;
@@ -195,6 +117,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   }, [search]);
 
   const set = (patch: Partial<ListParams>) => writeParams({ ...params, page: 1, ...patch });
+  const sortProps = { sort: params.sort, order: params.order, onSort: (sort: string, order: 'asc' | 'desc') => set({ sort, order }) };
 
   const countryOptions: Option[] | null = countries?.map((c) => ({
     value: c.value,
@@ -212,7 +135,8 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const scorePrompts = prompts?.scorePrompts ?? [];
   const rows = data?.items ?? [];
   const pageSymbols = rows.map((r) => r.symbol);
-  const pageBusy = pageSymbols.filter((s) => { const t = tasks.get(taskKey('analysis', s)); return t && isActive(t); }).length;
+  const inBatch = useMemo(() => new Set(batches.filter(isOpenBatch).flatMap((b) => b.symbols)), [batches]);
+  const batchable = pageSymbols.filter((s) => !inBatch.has(s));
   const hasFilters = params.q || params.exchange.length || params.country.length || params.tags.length;
   const needsKeys = !settings.fmpKey;
   const empty = sync && sync.total === 0;
@@ -268,37 +192,9 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         </section>
       )}
 
-      {sync?.running && (
-        <section class="syncbar card">
-          <div class="syncbar__head">
-            <Spinner />
-            <span>{sync.phase}…</span>
-            <span class="num muted">{Math.round(sync.progress * 100)}%</span>
-          </div>
-          <div class="progress">
-            <i style={{ width: `${Math.max(4, sync.progress * 100)}%` }} />
-          </div>
-        </section>
-      )}
-
-      {heatJob.running && (
-        <section class="syncbar card" aria-live="polite">
-          <div class="syncbar__head">
-            <Spinner />
-            <span>
-              {heatJob.total ? `Refreshing heat · ${heatJob.done.toLocaleString('en-US')} of ${heatJob.total.toLocaleString('en-US')} companies` : 'Finding companies to refresh'}
-              {heatJob.failed > 0 && <span class="muted"> · {heatJob.failed.toLocaleString('en-US')} failed</span>}
-            </span>
-            <span class="num muted">{heatJob.total ? Math.floor((heatJob.done / heatJob.total) * 100) : 0}%</span>
-            <button class="link-btn" onClick={() => setHeatJob(api.stopHeatJob())}>
-              Stop
-            </button>
-          </div>
-          <div class="progress">
-            <i style={{ width: `${Math.max(2, heatJob.total ? (heatJob.done / heatJob.total) * 100 : 0)}%` }} />
-          </div>
-        </section>
-      )}
+      <SyncBar sync={sync} />
+      <HeatJobBar job={heat.job} onStop={heat.stop} />
+      <BatchBar />
 
       <section class="toolbar">
         <label class="search">
@@ -328,23 +224,19 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           </button>
         ) : null}
         <span class="toolbar__spacer" />
-        <button
-          class="btn"
-          disabled={!settings.fmpKey || heatJob.running || !!sync?.running || !sync?.total}
-          onClick={startHeat}
-          title={settings.fmpKey ? 'Count the last 30 days of news for every company. Companies refreshed in the last hour are skipped.' : 'Add an FMP key in Settings first'}
-        >
-          {heatJob.running ? <Spinner /> : <I.Flame size={16} />}
-          {heatJob.running ? 'Refreshing heat…' : 'Refresh heat'}
-        </button>
+        <HeatButton kind="stocks" job={heat.job} disabled={!!sync?.running || !sync?.total} onStart={heat.start} />
         <button
           class="btn btn--primary"
-          disabled={!rows.length || pageBusy > 0}
-          onClick={() => runAnalysis(pageSymbols, 'analysis')}
-          title="Score, tag and introduce every stock on this page. Generate diagrams from a stock's detail page."
+          disabled={!batchable.length}
+          onClick={() => setBatchSymbols(batchable)}
+          title={
+            rows.length && !batchable.length
+              ? 'Every stock on this page is already in a running batch'
+              : 'Review, then send one Gemini batch job that scores, tags and introduces every stock on this page. Generate diagrams from a stock’s detail page.'
+          }
         >
-          {pageBusy ? <Spinner /> : <I.Sparkle size={16} />}
-          {pageBusy ? `Analysing ${pageBusy}…` : `Analyse page (${rows.length})`}
+          <I.Stack size={16} />
+          Batch analyse page ({batchable.length})
         </button>
       </section>
 
@@ -369,21 +261,21 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
       )}
 
       <section class={`table-wrap card${loading && data ? ' is-loading' : ''}`}>
-        <div class="table-scroll">
+        <div class="table-scroll" ref={tableScroll}>
           <table class="stocks">
             <thead>
               <tr>
-                <SortHeader label="Company" sortKey="symbol" params={params} />
-                <SortHeader label="Market cap" sortKey="marketCap" params={params} align="right" />
+                <SortHeader label="Company" sortKey="symbol" {...sortProps} />
+                <SortHeader label="Market cap" sortKey="marketCap" {...sortProps} align="right" />
                 <th>Exchange</th>
-                <SortHeader label="Heat" sortKey="heat" params={params} title="News articles published in the last 30 days" />
-                <SortHeader label="Float" sortKey="floatRatio" params={params} title="Float shares / total shares outstanding" />
+                <SortHeader label="Heat" sortKey="heat" {...sortProps} title="News articles published in the last 30 days" />
+                <SortHeader label="Float" sortKey="floatRatio" {...sortProps} title="Float shares / total shares outstanding" />
                 <th>Country</th>
                 {scorePrompts.map((p) => (
-                  <SortHeader key={p.id} label={p.title} sortKey={`score:${p.id}`} params={params} title={p.description} />
+                  <SortHeader key={p.id} label={p.title} sortKey={`score:${p.id}`} {...sortProps} title={p.description} />
                 ))}
                 <th>Tags</th>
-                <SortHeader label="Last LLM run" sortKey="lastLlmRunAt" params={params} />
+                <SortHeader label="Last LLM run" sortKey="lastLlmRunAt" {...sortProps} />
                 <th class="actions-col" aria-label="Actions" />
               </tr>
             </thead>
@@ -459,6 +351,10 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
                             <span class={`state state--${task.state}`}>
                               <Spinner size={11} /> {task.state === 'queued' ? 'Queued' : 'Analysing'}
                             </span>
+                          ) : inBatch.has(r.symbol) ? (
+                            <span class="state state--batch" title="Waiting for a Gemini batch job">
+                              <I.Clock size={12} /> In batch
+                            </span>
                           ) : (
                             <span class={r.lastLlmRunAt ? '' : 'muted'}>{relTime(r.lastLlmRunAt)}</span>
                           )}
@@ -489,8 +385,9 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           )}
           {error && <div class="empty empty--error">{error}</div>}
         </div>
-        {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
+        {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); scrollToTop(tableScroll.current, 'smooth'); }} />}
       </section>
+      {batchSymbols && <BatchModal symbols={batchSymbols} onClose={() => setBatchSymbols(null)} />}
     </div>
   );
 }

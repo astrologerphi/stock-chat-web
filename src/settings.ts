@@ -5,12 +5,15 @@ export interface Settings {
   geminiKey: string;
   geminiModel: string;
   geminiThinking: ThinkingLevel;
+  /** Model and thinking level for Gemini Batch API jobs (Batch analyse page). */
+  batchModel: string;
+  batchThinking: ThinkingLevel;
   fmpKey: string;
   pageSize: number;
 }
 
 const STORAGE_KEY = 'meridian.settings';
-const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiThinking: 'default', fmpKey: '', pageSize: 25 };
+const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiThinking: 'default', batchModel: 'gemini-3.8-flash', batchThinking: 'default', fmpKey: '', pageSize: 25 };
 
 function load(): Settings {
   try {

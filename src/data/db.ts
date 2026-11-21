@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS stocks (
   price REAL,
   change_percentage REAL,
   active INTEGER NOT NULL DEFAULT 1,
+  is_etf INTEGER NOT NULL DEFAULT 0,
   float_shares REAL,
   outstanding_shares REAL,
   float_ratio REAL,
@@ -41,6 +42,7 @@ CREATE INDEX IF NOT EXISTS stocks_float_ratio ON stocks (active, float_ratio);
 CREATE INDEX IF NOT EXISTS stocks_last_llm_run_at ON stocks (active, last_llm_run_at);
 CREATE INDEX IF NOT EXISTS stocks_country ON stocks (country);
 CREATE INDEX IF NOT EXISTS stocks_exchange ON stocks (exchange);
+-- Indexes on is_etf are created in migrate(), after the column exists in older databases.
 
 CREATE TABLE IF NOT EXISTS stock_tags (
   symbol TEXT NOT NULL,
@@ -71,6 +73,21 @@ CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Gemini Batch API jobs. id is the operation name (batches/...); results are applied once, on the first check after they finish.
+CREATE TABLE IF NOT EXISTS llm_batches (
+  id TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  thinking TEXT NOT NULL DEFAULT 'default',
+  symbols TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL DEFAULT 'pending',
+  stats TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  checked_at TEXT,
+  finished_at TEXT,
+  applied INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 export interface StockProfile {
@@ -96,6 +113,7 @@ export interface StockDoc {
   price: number | null;
   changePercentage: number | null;
   active: boolean;
+  isEtf: boolean;
   floatShares: number | null;
   outstandingShares: number | null;
   floatRatio: number | null;
@@ -142,6 +160,7 @@ export function readStock(r: Row): StockDoc {
     price: num(r.price),
     changePercentage: num(r.change_percentage),
     active: r.active == null ? true : Number(r.active) === 1,
+    isEtf: Number(r.is_etf) === 1,
     floatShares: num(r.float_shares),
     outstandingShares: num(r.outstanding_shares),
     floatRatio: num(r.float_ratio),
@@ -187,8 +206,19 @@ async function open(): Promise<Database> {
   const { connect } = await import('@tursodatabase/database-wasm');
   const db = await connect(DB_FILE);
   await db.exec(SCHEMA);
+  await migrate(db);
   await backfillTagLibrary(db);
   return db;
+}
+
+/** Brings databases created by older versions up to the current schema. */
+async function migrate(db: Database) {
+  const columns = (await db.all('PRAGMA table_info(stocks)')) as { name: string }[];
+  if (!columns.some((c) => c.name === 'is_etf')) await db.exec('ALTER TABLE stocks ADD COLUMN is_etf INTEGER NOT NULL DEFAULT 0');
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS stocks_kind_market_cap ON stocks (active, is_etf, market_cap);
+    CREATE INDEX IF NOT EXISTS stocks_kind_heat ON stocks (active, is_etf, heat);
+  `);
 }
 
 /** Adds every tag already used by a company to the library (covers databases created before the library existed). */

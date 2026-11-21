@@ -1,3 +1,4 @@
+import { cancelBatch, checkBatches, listBatches, prepareBatch, submitBatch } from './data/batch.ts';
 import { DEFAULT_MODEL, listModels } from './data/gemini.ts';
 import { Fmp } from './data/fmp.ts';
 import { getHeatJob, startHeatJob, stopHeatJob } from './data/heat.ts';
@@ -8,7 +9,7 @@ import { getSyncStatus, startSync } from './data/sync.ts';
 import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { Facet, HeatJobStatus, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
+import type { BatchDraft, BatchRecord, Facet, HeatJobStatus, ListKind, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -32,6 +33,16 @@ const keys = () => {
   return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.geminiModel.trim() || DEFAULT_MODEL, thinking: s.geminiThinking };
 };
 
+const batchKeys = () => {
+  const s = getSettings();
+  return { fmp: s.fmpKey.trim(), gemini: s.geminiKey.trim(), model: s.batchModel.trim() || DEFAULT_MODEL, thinking: s.batchThinking };
+};
+
+function requireKeys(k: { gemini: string; fmp: string }) {
+  if (!k.gemini) throw new HttpError(400, 'Gemini API key is missing. Add it in Settings.');
+  if (!k.fmp) throw new HttpError(400, 'FMP API key is missing. Add it in Settings.');
+}
+
 const listParam = (values: string[]) => values.map((v) => v.trim()).filter(Boolean).slice(0, 50);
 
 function checkSymbol(symbol: string) {
@@ -41,8 +52,9 @@ function checkSymbol(symbol: string) {
 }
 
 export const api = {
-  async list(p: ListParams): Promise<ListResponse> {
+  async list(p: ListParams, kind: ListKind = 'stocks'): Promise<ListResponse> {
     return listStocks({
+      kind,
       page: Math.max(1, Math.floor(p.page) || 1),
       pageSize: Math.min(200, Math.max(5, Math.floor(p.pageSize) || 25)),
       sort: p.sort,
@@ -57,9 +69,9 @@ export const api = {
     return refreshHeat(new Fmp(keys().fmp), symbols);
   },
   heatJob: (): HeatJobStatus => getHeatJob(),
-  /** Refreshes the heat of every company in the background; reports progress if a run is already going. */
-  startHeatJob(): HeatJobStatus {
-    startHeatJob(keys().fmp);
+  /** Refreshes the heat of every stock or ETF in the background; reports progress if a run is already going. */
+  startHeatJob(kind: ListKind = 'stocks'): HeatJobStatus {
+    startHeatJob(keys().fmp, kind);
     return getHeatJob();
   },
   stopHeatJob(): HeatJobStatus {
@@ -78,7 +90,7 @@ export const api = {
     return { tags: saved };
   },
   countries: (): Promise<Facet[]> => countryFacets(),
-  exchanges: (): Promise<Facet[]> => exchangeFacets(),
+  exchanges: (kind: ListKind = 'stocks'): Promise<Facet[]> => exchangeFacets(kind),
   tags: (): Promise<Facet[]> => tagFacets(),
   /** Every tag in the library, including deleted (blocked) ones. */
   tagLibrary: (): Promise<TagInfo[]> => listTagLibrary(),
@@ -97,8 +109,7 @@ export const api = {
     const list = symbols.map(String).slice(0, 200);
     if (!list.length) throw new HttpError(400, 'No symbols provided');
     const k = keys();
-    if (!k.gemini) throw new HttpError(400, 'Gemini API key is missing. Add it in Settings.');
-    if (!k.fmp) throw new HttpError(400, 'FMP API key is missing. Add it in Settings.');
+    requireKeys(k);
     if (kind === 'diagrams' && !(await getPrompts()).svgPrompts.length) {
       throw new HttpError(400, 'No diagram prompts configured. Add one on the Prompts page.');
     }
@@ -107,8 +118,21 @@ export const api = {
   async llmStatus(): Promise<TaskStatus[]> {
     return getTaskStatuses();
   },
+  /** Builds the batch analysis requests for review; nothing is sent to Gemini. */
+  async prepareBatch(symbols: string[], onProgress: (done: number, total: number) => void, signal?: AbortSignal): Promise<BatchDraft> {
+    const list = [...new Set(symbols.map(String))].slice(0, 200);
+    if (!list.length) throw new HttpError(400, 'No symbols provided');
+    const k = batchKeys();
+    requireKeys(k);
+    return prepareBatch(list, k, onProgress, signal);
+  },
+  submitBatch: (draft: BatchDraft, symbols: string[]): Promise<BatchRecord> => submitBatch(draft, symbols, batchKeys().gemini),
+  batches: (): Promise<BatchRecord[]> => listBatches(),
+  /** Polls unfinished batch jobs and applies finished results. */
+  checkBatches: () => checkBatches(batchKeys().gemini),
+  cancelBatch: (id: string) => cancelBatch(id, batchKeys().gemini),
   async models(key: string) {
-    return (await listModels(key.trim())).map((m) => ({ id: m.id, displayName: m.displayName }));
+    return (await listModels(key.trim())).map((m) => ({ id: m.id, displayName: m.displayName, batch: m.batch }));
   },
   async testGemini(key: string, model: string) {
     const started = performance.now();

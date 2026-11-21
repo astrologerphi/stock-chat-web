@@ -99,6 +99,16 @@ export class Fmp {
     });
   }
 
+  /** Actively traded US-listed exchange-traded funds. */
+  etfScreener() {
+    return this.get<FmpScreenerRow[]>('company-screener', {
+      exchange: 'NASDAQ,NYSE,AMEX',
+      isEtf: true,
+      isActivelyTrading: true,
+      limit: 20000,
+    });
+  }
+
   floatPage(page: number, limit: number) {
     return this.get<FmpFloat[]>('shares-float-all', { page, limit });
   }

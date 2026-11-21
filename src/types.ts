@@ -103,14 +103,18 @@ export interface TaskStatus {
   updatedAt: string;
 }
 
+/** Which list a query or job is about: operating companies or exchange-traded funds. */
+export type ListKind = 'stocks' | 'etfs';
+
 export interface HeatJobStatus {
+  kind: ListKind;
   running: boolean;
-  /** Companies processed so far, out of `total` (those not refreshed in the last hour). */
+  /** Symbols processed so far, out of `total` (those not refreshed in the last hour). */
   done: number;
   total: number;
   updated: number;
   failed: number;
-  /** Companies left out because their heat was refreshed in the last hour. */
+  /** Symbols left out because their heat was refreshed in the last hour. */
   skipped: number;
   cancelled: boolean;
   error: string | null;
@@ -123,7 +127,48 @@ export interface SyncStatus {
   progress: number;
   lastSyncedAt: string | null;
   error: string | null;
+  /** Active stocks (companies). */
   total: number;
+  /** Active ETFs. */
+  etfs: number;
 }
 
 export type SortKey = 'marketCap' | 'heat' | 'floatRatio' | 'lastLlmRunAt' | 'symbol' | `score:${string}`;
+
+export type BatchState = 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'expired';
+
+/** A Gemini Batch API analysis job, persisted so its results are fetched even after the page was closed. */
+export interface BatchRecord {
+  /** Gemini operation name, e.g. `batches/abc123`. */
+  id: string;
+  model: string;
+  thinking: string;
+  symbols: string[];
+  state: BatchState;
+  stats: { total: number; succeeded: number; failed: number; pending: number } | null;
+  error: string | null;
+  createdAt: string;
+  checkedAt: string | null;
+  finishedAt: string | null;
+  /** Results have been written to the stocks (or the job ended without any). */
+  applied: boolean;
+}
+
+/** One stock's request in a batch that is being reviewed before submission. */
+export interface BatchDraftItem {
+  symbol: string;
+  name: string;
+  prompt: string;
+  newsCount: number;
+  approxTokens: number;
+}
+
+export interface BatchDraft {
+  model: string;
+  thinking: string;
+  system: string;
+  schema: object;
+  items: BatchDraftItem[];
+  /** Symbols left out of the draft, with the reason. */
+  skipped: { symbol: string; reason: string }[];
+}

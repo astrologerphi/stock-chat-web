@@ -1,7 +1,7 @@
 import { all, get, transaction } from './db.ts';
 import { Fmp } from './fmp.ts';
 import { HttpError, mapLimit } from './util.ts';
-import type { HeatJobStatus } from '../types.ts';
+import type { HeatJobStatus, ListKind } from '../types.ts';
 
 /** Companies refreshed this recently are skipped, so restarting an interrupted run picks up where it stopped. */
 const FRESH_MS = 3600_000;
@@ -10,18 +10,18 @@ const FLUSH_EVERY = 50;
 /** A long run of failures means FMP is unreachable or the plan is exhausted; stop instead of burning through every symbol. */
 const MAX_CONSECUTIVE_FAILURES = 25;
 
-const status: HeatJobStatus = { running: false, done: 0, total: 0, updated: 0, failed: 0, skipped: 0, cancelled: false, error: null, finishedAt: null };
+const status: HeatJobStatus = { kind: 'stocks', running: false, done: 0, total: 0, updated: 0, failed: 0, skipped: 0, cancelled: false, error: null, finishedAt: null };
 let stopRequested = false;
 
 export const getHeatJob = (): HeatJobStatus => ({ ...status });
 
-/** Starts refreshing the heat of every active company in the background. Returns false if a run is already going. */
-export function startHeatJob(fmpKey: string): boolean {
+/** Starts refreshing the heat of every active stock or ETF in the background. Returns false if a run is already going. */
+export function startHeatJob(fmpKey: string, kind: ListKind): boolean {
   if (status.running) return false;
   const fmp = new Fmp(fmpKey);
   stopRequested = false;
-  Object.assign(status, { running: true, done: 0, total: 0, updated: 0, failed: 0, skipped: 0, cancelled: false, error: null, finishedAt: null });
-  runJob(fmp)
+  Object.assign(status, { kind, running: true, done: 0, total: 0, updated: 0, failed: 0, skipped: 0, cancelled: false, error: null, finishedAt: null });
+  runJob(fmp, kind === 'etfs' ? 1 : 0)
     .catch((err: unknown) => {
       status.error = err instanceof Error ? err.message : String(err);
       console.error('[heat]', err);
@@ -34,15 +34,16 @@ export function stopHeatJob() {
   if (status.running) stopRequested = true;
 }
 
-async function runJob(fmp: Fmp) {
+async function runJob(fmp: Fmp, isEtf: number) {
   const cutoff = new Date(Date.now() - FRESH_MS).toISOString();
   const [rows, active] = await Promise.all([
     all<{ symbol: string }>(
-      `SELECT symbol FROM stocks WHERE active = 1 AND (heat_updated_at IS NULL OR heat_updated_at < ?)
+      `SELECT symbol FROM stocks WHERE active = 1 AND is_etf = ? AND (heat_updated_at IS NULL OR heat_updated_at < ?)
        ORDER BY heat_updated_at IS NOT NULL, heat_updated_at, market_cap DESC`,
+      isEtf,
       cutoff,
     ),
-    get<{ n: number }>('SELECT COUNT(*) AS n FROM stocks WHERE active = 1'),
+    get<{ n: number }>('SELECT COUNT(*) AS n FROM stocks WHERE active = 1 AND is_etf = ?', isEtf),
   ]);
   Object.assign(status, { total: rows.length, skipped: Math.max(0, Number(active?.n ?? 0) - rows.length) });
 

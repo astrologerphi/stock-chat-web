@@ -5,6 +5,7 @@ import { useEffect } from 'preact/hooks';
 import './styles.css';
 import { useRoute } from './router.ts';
 import { useSettings } from './settings.ts';
+import { isOpenBatch, useBatches } from './batches.ts';
 import { isActive, useTasks } from './tasks.ts';
 import { setTheme, useTheme, type Theme } from './theme.ts';
 import * as I from './components/icons.tsx';
@@ -14,20 +15,34 @@ import { Settings } from './pages/Settings.tsx';
 import { Tags } from './pages/Tags.tsx';
 import { StockDetail } from './pages/StockDetail.tsx';
 import { StockList } from './pages/StockList.tsx';
+import { EtfList } from './pages/EtfList.tsx';
 
 function TaskIndicator() {
   const tasks = useTasks();
+  const { batches } = useBatches();
   const all = [...tasks.values()];
   const running = all.filter((t) => t.state === 'running').length;
   const queued = all.filter((t) => t.state === 'queued').length;
-  if (!running && !queued) return null;
+  const open = batches.filter(isOpenBatch);
   return (
-    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
-      <Spinner size={12} />
-      <span>
-        {running} running{queued ? ` · ${queued} queued` : ''}
-      </span>
-    </span>
+    <>
+      {(running > 0 || queued > 0) && (
+        <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
+          <Spinner size={12} />
+          <span>
+            {running} running{queued ? ` · ${queued} queued` : ''}
+          </span>
+        </span>
+      )}
+      {open.length > 0 && (
+        <a class="task-ind" href="#/" title={open.map((b) => `${b.symbols.length} stocks · ${b.state}`).join('\n')}>
+          <I.Clock size={13} />
+          <span>
+            {open.length === 1 ? '1 batch' : `${open.length} batches`}
+          </span>
+        </a>
+      )}
+    </>
   );
 }
 
@@ -73,9 +88,12 @@ function App() {
 
   const stockMatch = /^\/stock\/(.+)$/.exec(route.path);
   let page;
-  let section: 'market' | 'prompts' | 'tags' | 'settings' = 'market';
+  let section: 'stocks' | 'etfs' | 'prompts' | 'tags' | 'settings' = 'stocks';
   if (stockMatch) page = <StockDetail key={stockMatch[1]} symbol={decodeURIComponent(stockMatch[1]!)} />;
-  else if (route.path === '/prompts') {
+  else if (route.path === '/etfs') {
+    page = <EtfList params={route.params} />;
+    section = 'etfs';
+  } else if (route.path === '/prompts') {
     page = <Prompts />;
     section = 'prompts';
   } else if (route.path === '/tags') {
@@ -95,8 +113,11 @@ function App() {
           <span class="brand__name">Meridian</span>
         </a>
         <nav class="nav">
-          <a href="#/" class={section === 'market' ? 'is-active' : ''}>
-            <I.Rows size={15} /> <span>Market</span>
+          <a href="#/" class={section === 'stocks' ? 'is-active' : ''}>
+            <I.Rows size={15} /> <span>Stocks</span>
+          </a>
+          <a href="#/etfs" class={section === 'etfs' ? 'is-active' : ''}>
+            <I.Layers size={15} /> <span>ETFs</span>
           </a>
           <a href="#/prompts" class={section === 'prompts' ? 'is-active' : ''}>
             <I.Quill size={15} /> <span>Prompts</span>

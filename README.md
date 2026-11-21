@@ -6,14 +6,16 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 
 ## Features
 
-- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **Stocks** (`#/`): every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **ETFs** (`#/etfs`): every actively traded US-listed ETF with icon, symbol, name, market cap, exchange (filterable) and heat, plus search, sorting and its own **Refresh heat** run. ETFs have no detail page, analysis, tags or float. Databases synced before ETFs existed fetch them automatically the first time the ETF page is opened.
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
-- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), FMP key with test, page size and universe sync.
+- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), a separate batch model (only models that support `batchGenerateContent` are listed) and batch thinking level, FMP key with test, page size and universe sync (companies and ETFs).
 - **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
 - **LLM tasks**: two kinds, both using the FMP profile and the news from the last 30 days as context and returning structured JSON.
-  - *Analysis*: one Gemini call returns every score with its reason, tags and the introduction. Run it from the list (one row or the whole page) or from the detail page.
+  - *Analysis*: one Gemini call returns every score with its reason, tags and the introduction. Run it for one stock from its list row or detail page, or for the whole page with **Batch analyse page**.
+  - *Batch analysis*: **Batch analyse page** first loads each stock's context from FMP and shows a review sheet with the shared system instruction, the response schema and every stock's full prompt; stocks can be left out. Nothing reaches Gemini until you click *Submit batch*. The requests are then sent as a single [Gemini Batch API](https://ai.google.dev/gemini-api/docs/batch-api) job (about half the price; usually minutes, at most 24 hours) using the batch model and thinking level from Settings. The job id is saved in the database, so the page may be closed: unfinished jobs are checked when the app opens, every 30 seconds while it is visible, and on *Check now*, and finished results are applied like a normal analysis. Stocks in a running batch show *In batch* and are left out of new batches.
   - *Diagrams*: a separate Gemini call returns all SVG diagrams. It runs only from the detail page, because diagrams are slow and token-heavy.
 
 ## Requirements
@@ -61,17 +63,18 @@ Cross-Origin-Embedder-Policy: require-corp
 - **API keys** stay **only in the browser's localStorage** (`meridian.settings`) and are sent directly to FMP and Gemini. Enter them on the Settings page. The first visit with an FMP key syncs the company universe automatically.
 - **Stock data, scores, tags, prompts** live in `meridian.db`, a SQLite file in the [Origin Private File System](https://developer.mozilla.org/docs/Web/API/File_System_API/Origin_private_file_system). Each browser profile has its own database, and clearing the site's data deletes it.
 - OPFS file handles are exclusive, so the app can be open in **one tab at a time**; a second tab shows a message instead of corrupting the file.
-- LLM tasks run in the page (three at a time). Analysis and diagram tasks for the same stock can run side by side because they write different columns. Queued tasks are lost if the page is closed or reloaded before they finish.
+- Single-stock LLM tasks run in the page (three at a time). Analysis and diagram tasks for the same stock can run side by side because they write different columns. Queued tasks are lost if the page is closed or reloaded before they finish. Batch jobs run on Gemini's side and survive reloads (see above); Gemini keeps them for 48 hours.
 
 ### Schema
 
 | Table | Purpose |
 | --- | --- |
-| `stocks` | One row per company: screener fields, float, heat, profile / leaders / diagrams (JSON text), LLM introduction and run metadata, `active` flag for delisted symbols |
+| `stocks` | One row per company: screener fields, float, heat, profile / leaders / diagrams (JSON text), LLM introduction and run metadata, `active` flag for delisted symbols, `is_etf` flag (ETFs share the table and are filtered out of every company query) |
 | `stock_tags` | `(symbol, tag, position)`: effective tags = LLM tags merged with manual edits (`stocks.tag_edits`) |
 | `tags` | Tag library: `(key, name, blocked, created_at)`; `key` is the lower-cased name. LLM tags are mapped onto it (new ones are added, blocked ones dropped). Filled from `stock_tags` on first open |
 | `stock_scores` | `(symbol, prompt_id, score, reason)` |
 | `config` | JSON values: `prompts`, `meta` (last sync time) |
+| `llm_batches` | Gemini batch jobs: operation id, model, thinking, symbols, state, stats, error, timestamps, `applied` (results written to the stocks) |
 
 ### Roadmap: Turso Cloud sync
 
@@ -85,10 +88,12 @@ src/
   api.ts                          façade used by the UI; validates input and calls the data layer
   data/db.ts                      Turso wasm connection, schema, transactions, config
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
-  data/heat.ts                    background "Refresh heat" job for every company
+  data/heat.ts                    background "Refresh heat" job for every company or every ETF
   data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
-  data/sync.ts                    universe sync from the FMP screener + float data
+  data/sync.ts                    universe sync from the FMP screener (companies and ETFs) + float data
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue
+  data/batch.ts                   batch analysis: build prompts for review, submit, poll and apply results
+  batches.ts, tasks.ts            UI stores for batch jobs and in-page LLM tasks (polling, toasts)
   data/fmp.ts, data/gemini.ts     API clients
   types.ts                        shared types
 scripts/
@@ -129,6 +134,10 @@ All score prompts are requested together in one call to save tokens. The list sh
 
 Loaded asynchronously: the heat of each company on the current page, and the number of companies per country.
 
+### ETF list
+
+A separate tab lists ETFs (FMP screener with `isEtf=true`). Each row shows only the icon, symbol, name, market cap (sortable), exchange (filterable) and heat (sortable, loaded asynchronously).
+
 ### Stock details
 
 - Company leaders, from FMP when available.
@@ -154,12 +163,13 @@ Loaded asynchronously: the heat of each company on the current page, and the num
 
 - Gemini API key and connection test.
 - Gemini model select.
+- Batch model and thinking level select.
 - FMP API key.
 - Number of stocks displayed per page.
 
 ### LLM task and context
 
-An analysis task produces, for a single stock: scores with reasons, tags and the company introduction, then updates *Last LLM run*. The user can batch-run analysis for every stock on a page, or run it for a single stock from the list or the detail page.
+An analysis task produces, for a single stock: scores with reasons, tags and the company introduction, then updates *Last LLM run*. The user can batch-run analysis for every stock on a page, or run it for a single stock from the list or the detail page. A page batch shows every prompt and its context for confirmation first, is sent as one Gemini Batch API job, and its id is stored so the results are fetched automatically the next time the app opens.
 
 A diagram task produces only the SVG diagrams. It is started from the stock detail page and replaces that stock's diagrams. It does not change the scores, tags, introduction or *Last LLM run*.
 
