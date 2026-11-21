@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, type ListParams } from '../api.ts';
 import { countryName, flag, fullTime, money, relTime } from '../format.ts';
-import { navigate } from '../router.ts';
+import { navigate, scrollToTop } from '../router.ts';
 import { useSettings } from '../settings.ts';
 import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
 import { toast } from '../toast.ts';
@@ -73,6 +73,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const tasks = useTasks();
   const autoSynced = useRef(false);
   const requestId = useRef(0);
+  const tableScroll = useRef<HTMLDivElement>(null);
 
   const loadHeat = useCallback(
     async (rows: StockRow[]) => {
@@ -369,7 +370,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
       )}
 
       <section class={`table-wrap card${loading && data ? ' is-loading' : ''}`}>
-        <div class="table-scroll">
+        <div class="table-scroll" ref={tableScroll}>
           <table class="stocks">
             <thead>
               <tr>
@@ -489,7 +490,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           )}
           {error && <div class="empty empty--error">{error}</div>}
         </div>
-        {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />}
+        {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); scrollToTop(tableScroll.current, 'smooth'); }} />}
       </section>
     </div>
   );

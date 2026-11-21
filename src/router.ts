@@ -28,3 +28,13 @@ export function navigate(path: string, params?: URLSearchParams, replace = false
   else location.hash = hash;
   if (replace) window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
+
+/**
+ * Scrolls the current page back to the top. On wide screens pages scroll inside <main> (see the app
+ * shell in styles.css), elsewhere the document scrolls; `inner` is an extra scroller such as the stock table.
+ */
+export function scrollToTop(inner?: HTMLElement | null, behavior: ScrollBehavior = 'auto') {
+  inner?.scrollTo({ top: 0, behavior });
+  document.querySelector('main')?.scrollTo({ top: 0, behavior });
+  window.scrollTo({ top: 0, behavior });
+}

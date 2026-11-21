@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api.ts';
+import { scrollToTop } from '../router.ts';
 import { compact, countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { useSettings } from '../settings.ts';
 import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
@@ -261,7 +262,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
     setData(null);
     void load();
     api.prompts().then(setPrompts).catch(() => {});
-    window.scrollTo({ top: 0 });
+    scrollToTop();
   }, [load]);
 
   useOnTasksFinished(useCallback((symbols: string[]) => symbols.includes(symbol) && void load(), [symbol, load]));
