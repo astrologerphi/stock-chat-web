@@ -223,7 +223,8 @@ select {
   align-items: center;
   gap: 24px;
   height: 64px;
-  padding: 0 max(24px, calc((100vw - var(--maxw)) / 2));
+  /* Always the wide measure, never the page's, so the bar doesn't shift between tabs. */
+  padding: 0 max(24px, calc((100vw - var(--maxw-wide)) / 2));
   background: var(--chrome);
   backdrop-filter: saturate(160%) blur(18px);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
@@ -335,6 +336,70 @@ select {
   border: 1px solid rgb(var(--accent-rgb) / 0.25);
 }
 
+.cloud-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgb(var(--ink-rgb) / 0.02);
+  color: var(--text-2);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.cloud-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--line-2);
+}
+
+.cloud-btn:disabled {
+  cursor: progress;
+}
+
+.cloud-btn__dot {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 0 2px var(--bg);
+  transition: background 0.2s;
+}
+
+.cloud-btn[data-tone='pending'] .cloud-btn__dot {
+  background: var(--amber);
+}
+
+.cloud-btn[data-tone='error'] {
+  color: var(--coral);
+}
+
+.cloud-btn[data-tone='error'] .cloud-btn__dot {
+  background: var(--coral);
+}
+
+.cloud-btn[data-tone='syncing'] .cloud-btn__dot {
+  background: var(--accent);
+  animation: cloud-pulse 1.1s var(--ease) infinite;
+}
+
+@keyframes cloud-pulse {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cloud-btn[data-tone='syncing'] .cloud-btn__dot {
+    animation: none;
+  }
+}
+
 /* ---------- layout ---------- */
 
 main {
@@ -343,7 +408,7 @@ main {
   padding: 0 24px 80px;
 }
 
-/* The stock list gets the wide measure; the top bar follows so their edges stay aligned.
+/* The stock list gets the wide measure, matching the top bar's edges.
    The ETF list has four columns and keeps the standard measure. */
 #app:has(.page--list:not(.page--etfs)) {
   --maxw: var(--maxw-wide);
@@ -2931,6 +2996,23 @@ a.task-ind {
   color: var(--text-2);
   font-size: 12.5px;
   line-height: 1.5;
+}
+
+.field-hint code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgb(var(--ink-rgb) / 0.06);
+}
+
+.field-hint--warn,
+.cloud-status--error {
+  color: var(--coral);
+}
+
+.cloud-status--error {
+  max-width: 52ch;
 }
 
 .field-row {

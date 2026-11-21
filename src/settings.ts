@@ -10,10 +10,13 @@ export interface Settings {
   batchThinking: ThinkingLevel;
   fmpKey: string;
   pageSize: number;
+  /** Turso Cloud database (libsql://… URL) and its database token, for Cloud sync. Both empty = local only. */
+  tursoUrl: string;
+  tursoToken: string;
 }
 
 const STORAGE_KEY = 'meridian.settings';
-const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiThinking: 'default', batchModel: 'gemini-3.8-flash', batchThinking: 'default', fmpKey: '', pageSize: 25 };
+const DEFAULTS: Settings = { geminiKey: '', geminiModel: 'gemini-3.8-flash', geminiThinking: 'default', batchModel: 'gemini-3.8-flash', batchThinking: 'default', fmpKey: '', pageSize: 25, tursoUrl: '', tursoToken: '' };
 
 function load(): Settings {
   try {
@@ -39,6 +42,10 @@ window.addEventListener('storage', (e) => {
   current = load();
   for (const l of listeners) l(current);
 });
+
+export function subscribeSettings(listener: (s: Settings) => void) {
+  listeners.add(listener);
+}
 
 export function useSettings(): Settings {
   const [s, set] = useState(current);

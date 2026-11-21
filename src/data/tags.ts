@@ -1,5 +1,4 @@
-import type { Database } from '@tursodatabase/database-wasm';
-import { all, parseJson, placeholders, transaction } from './db.ts';
+import { all, parseJson, placeholders, transaction, type Database } from './db.ts';
 import { HttpError } from './util.ts';
 import type { TagInfo } from '../types.ts';
 

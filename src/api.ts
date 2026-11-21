@@ -1,4 +1,7 @@
 import { cancelBatch, checkBatches, listBatches, prepareBatch, submitBatch } from './data/batch.ts';
+import { cloudBlocker, cloudStats, cloudSync, testTurso } from './data/cloud.ts';
+import { onLocalWrite } from './data/db.ts';
+import { linkedUrl, looksLikePlatformToken, normalizeTursoUrl } from './data/remote.ts';
 import { DEFAULT_MODEL, listModels } from './data/gemini.ts';
 import { Fmp } from './data/fmp.ts';
 import { getHeatJob, startHeatJob, stopHeatJob } from './data/heat.ts';
@@ -143,6 +146,16 @@ export const api = {
       modelAvailable: models.some((m) => m.id === (model.trim() || DEFAULT_MODEL)),
     };
   },
+  /** Why Cloud sync can't run (not configured, or linked to another database), or null. */
+  cloudBlocker: () => cloudBlocker(),
+  cloudLinkedUrl: () => linkedUrl(),
+  normalizeTursoUrl: (url: string) => normalizeTursoUrl(url),
+  looksLikePlatformToken: (token: string) => looksLikePlatformToken(token),
+  cloudStats: () => cloudStats(),
+  /** Pushes local changes to Turso, then pulls remote ones unless `pushOnly`. */
+  cloudSync: (opts?: { pushOnly?: boolean }) => cloudSync(opts),
+  testTurso: (url: string, token: string) => testTurso(url, token),
+  onLocalWrite: (fn: () => void) => onLocalWrite(fn),
   async testFmp(key: string) {
     const started = performance.now();
     const profile = await new Fmp(key.trim()).profile('AAPL');
