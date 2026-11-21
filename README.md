@@ -6,11 +6,12 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 
 ## Features
 
-- **Stock list**: every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **Stocks** (`#/`): every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
+- **ETFs** (`#/etfs`): every actively traded US-listed ETF with icon, symbol, name, market cap, exchange (filterable) and heat, plus search, sorting and its own **Refresh heat** run. ETFs have no detail page, analysis, tags or float. Databases synced before ETFs existed fetch them automatically the first time the ETF page is opened.
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
-- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), FMP key with test, page size and universe sync.
+- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), FMP key with test, page size and universe sync (companies and ETFs).
 - **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
 - **LLM tasks**: two kinds, both using the FMP profile and the news from the last 30 days as context and returning structured JSON.
   - *Analysis*: one Gemini call returns every score with its reason, tags and the introduction. Run it from the list (one row or the whole page) or from the detail page.
@@ -67,7 +68,7 @@ Cross-Origin-Embedder-Policy: require-corp
 
 | Table | Purpose |
 | --- | --- |
-| `stocks` | One row per company: screener fields, float, heat, profile / leaders / diagrams (JSON text), LLM introduction and run metadata, `active` flag for delisted symbols |
+| `stocks` | One row per company: screener fields, float, heat, profile / leaders / diagrams (JSON text), LLM introduction and run metadata, `active` flag for delisted symbols, `is_etf` flag (ETFs share the table and are filtered out of every company query) |
 | `stock_tags` | `(symbol, tag, position)`: effective tags = LLM tags merged with manual edits (`stocks.tag_edits`) |
 | `tags` | Tag library: `(key, name, blocked, created_at)`; `key` is the lower-cased name. LLM tags are mapped onto it (new ones are added, blocked ones dropped). Filled from `stock_tags` on first open |
 | `stock_scores` | `(symbol, prompt_id, score, reason)` |
@@ -85,9 +86,9 @@ src/
   api.ts                          façade used by the UI; validates input and calls the data layer
   data/db.ts                      Turso wasm connection, schema, transactions, config
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
-  data/heat.ts                    background "Refresh heat" job for every company
+  data/heat.ts                    background "Refresh heat" job for every company or every ETF
   data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
-  data/sync.ts                    universe sync from the FMP screener + float data
+  data/sync.ts                    universe sync from the FMP screener (companies and ETFs) + float data
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue
   data/fmp.ts, data/gemini.ts     API clients
   types.ts                        shared types
@@ -128,6 +129,10 @@ Score prompts are managed by the user, for example *"the potential of this compa
 All score prompts are requested together in one call to save tokens. The list shows only the score; reasons appear on the detail page.
 
 Loaded asynchronously: the heat of each company on the current page, and the number of companies per country.
+
+### ETF list
+
+A separate tab lists ETFs (FMP screener with `isEtf=true`). Each row shows only the icon, symbol, name, market cap (sortable), exchange (filterable) and heat (sortable, loaded asynchronously).
 
 ### Stock details
 

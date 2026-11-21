@@ -103,14 +103,18 @@ export interface TaskStatus {
   updatedAt: string;
 }
 
+/** Which list a query or job is about: operating companies or exchange-traded funds. */
+export type ListKind = 'stocks' | 'etfs';
+
 export interface HeatJobStatus {
+  kind: ListKind;
   running: boolean;
-  /** Companies processed so far, out of `total` (those not refreshed in the last hour). */
+  /** Symbols processed so far, out of `total` (those not refreshed in the last hour). */
   done: number;
   total: number;
   updated: number;
   failed: number;
-  /** Companies left out because their heat was refreshed in the last hour. */
+  /** Symbols left out because their heat was refreshed in the last hour. */
   skipped: number;
   cancelled: boolean;
   error: string | null;
@@ -123,7 +127,10 @@ export interface SyncStatus {
   progress: number;
   lastSyncedAt: string | null;
   error: string | null;
+  /** Active stocks (companies). */
   total: number;
+  /** Active ETFs. */
+  etfs: number;
 }
 
 export type SortKey = 'marketCap' | 'heat' | 'floatRatio' | 'lastLlmRunAt' | 'symbol' | `score:${string}`;

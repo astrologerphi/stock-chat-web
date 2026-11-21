@@ -343,8 +343,9 @@ main {
   padding: 0 24px 80px;
 }
 
-/* The stock list gets the wide measure; the top bar follows so their edges stay aligned. */
-#app:has(.page--list) {
+/* The stock list gets the wide measure; the top bar follows so their edges stay aligned.
+   The ETF list has four columns and keeps the standard measure. */
+#app:has(.page--list:not(.page--etfs)) {
   --maxw: var(--maxw-wide);
 }
 
@@ -1202,7 +1203,8 @@ main {
   background: linear-gradient(90deg, var(--row-hover-solid) 85%, transparent);
 }
 
-.stocks .company a {
+.stocks .company a,
+.stocks .company__id {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1210,6 +1212,27 @@ main {
 
 .stocks tbody tr:hover .company__symbol {
   color: var(--accent);
+}
+
+/* ETF rows don't open a detail page. */
+.stocks--plain tbody tr {
+  cursor: default;
+}
+
+.stocks--plain tbody tr:hover .company__symbol {
+  color: inherit;
+}
+
+/* Only four columns: give fund names the room instead of leaving a gap mid-table. */
+@media (min-width: 721px) {
+  .stocks--plain .company {
+    width: 50%;
+    max-width: none;
+  }
+
+  .stocks--plain .company__name {
+    max-width: 520px;
+  }
 }
 
 .company__text {

@@ -8,7 +8,7 @@ import { getSyncStatus, startSync } from './data/sync.ts';
 import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { Facet, HeatJobStatus, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
+import type { Facet, HeatJobStatus, ListKind, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -41,8 +41,9 @@ function checkSymbol(symbol: string) {
 }
 
 export const api = {
-  async list(p: ListParams): Promise<ListResponse> {
+  async list(p: ListParams, kind: ListKind = 'stocks'): Promise<ListResponse> {
     return listStocks({
+      kind,
       page: Math.max(1, Math.floor(p.page) || 1),
       pageSize: Math.min(200, Math.max(5, Math.floor(p.pageSize) || 25)),
       sort: p.sort,
@@ -57,9 +58,9 @@ export const api = {
     return refreshHeat(new Fmp(keys().fmp), symbols);
   },
   heatJob: (): HeatJobStatus => getHeatJob(),
-  /** Refreshes the heat of every company in the background; reports progress if a run is already going. */
-  startHeatJob(): HeatJobStatus {
-    startHeatJob(keys().fmp);
+  /** Refreshes the heat of every stock or ETF in the background; reports progress if a run is already going. */
+  startHeatJob(kind: ListKind = 'stocks'): HeatJobStatus {
+    startHeatJob(keys().fmp, kind);
     return getHeatJob();
   },
   stopHeatJob(): HeatJobStatus {
@@ -78,7 +79,7 @@ export const api = {
     return { tags: saved };
   },
   countries: (): Promise<Facet[]> => countryFacets(),
-  exchanges: (): Promise<Facet[]> => exchangeFacets(),
+  exchanges: (kind: ListKind = 'stocks'): Promise<Facet[]> => exchangeFacets(kind),
   tags: (): Promise<Facet[]> => tagFacets(),
   /** Every tag in the library, including deleted (blocked) ones. */
   tagLibrary: (): Promise<TagInfo[]> => listTagLibrary(),

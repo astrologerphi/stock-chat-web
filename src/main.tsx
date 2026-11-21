@@ -14,6 +14,7 @@ import { Settings } from './pages/Settings.tsx';
 import { Tags } from './pages/Tags.tsx';
 import { StockDetail } from './pages/StockDetail.tsx';
 import { StockList } from './pages/StockList.tsx';
+import { EtfList } from './pages/EtfList.tsx';
 
 function TaskIndicator() {
   const tasks = useTasks();
@@ -73,9 +74,12 @@ function App() {
 
   const stockMatch = /^\/stock\/(.+)$/.exec(route.path);
   let page;
-  let section: 'market' | 'prompts' | 'tags' | 'settings' = 'market';
+  let section: 'stocks' | 'etfs' | 'prompts' | 'tags' | 'settings' = 'stocks';
   if (stockMatch) page = <StockDetail key={stockMatch[1]} symbol={decodeURIComponent(stockMatch[1]!)} />;
-  else if (route.path === '/prompts') {
+  else if (route.path === '/etfs') {
+    page = <EtfList params={route.params} />;
+    section = 'etfs';
+  } else if (route.path === '/prompts') {
     page = <Prompts />;
     section = 'prompts';
   } else if (route.path === '/tags') {
@@ -95,8 +99,11 @@ function App() {
           <span class="brand__name">Meridian</span>
         </a>
         <nav class="nav">
-          <a href="#/" class={section === 'market' ? 'is-active' : ''}>
-            <I.Rows size={15} /> <span>Market</span>
+          <a href="#/" class={section === 'stocks' ? 'is-active' : ''}>
+            <I.Rows size={15} /> <span>Stocks</span>
+          </a>
+          <a href="#/etfs" class={section === 'etfs' ? 'is-active' : ''}>
+            <I.Layers size={15} /> <span>ETFs</span>
           </a>
           <a href="#/prompts" class={section === 'prompts' ? 'is-active' : ''}>
             <I.Quill size={15} /> <span>Prompts</span>

@@ -271,7 +271,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
     return (
       <div class="page">
         <a class="back" href="#/">
-          <I.ChevronLeft size={16} /> Market
+          <I.ChevronLeft size={16} /> Stocks
         </a>
         <div class="empty empty--error">{error}</div>
       </div>
@@ -281,7 +281,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
     return (
       <div class="page detail">
         <a class="back" href="#/">
-          <I.ChevronLeft size={16} /> Market
+          <I.ChevronLeft size={16} /> Stocks
         </a>
         <div class="detail-hero">
           <span class="skeleton" style={{ width: '88px', height: '88px', borderRadius: '24px' }} />
@@ -302,7 +302,7 @@ export function StockDetail({ symbol }: { symbol: string }) {
   return (
     <div class="page detail">
       <a class="back" href="#/" onClick={(e) => { if (history.length > 1) { e.preventDefault(); history.back(); } }}>
-        <I.ChevronLeft size={16} /> Market
+        <I.ChevronLeft size={16} /> Stocks
       </a>
 
       <section class="detail-hero">

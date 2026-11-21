@@ -196,7 +196,7 @@ export function Settings() {
           <div>
             <div class="field-title">Market universe</div>
             <div class="muted small">
-              {sync ? `${sync.total.toLocaleString('en-US')} companies · synced ` : ''}
+              {sync ? `${sync.total.toLocaleString('en-US')} companies · ${sync.etfs.toLocaleString('en-US')} ETFs · synced ` : ''}
               <span title={fullTime(sync?.lastSyncedAt)}>{sync ? relTime(sync.lastSyncedAt) : '…'}</span>
             </div>
           </div>
