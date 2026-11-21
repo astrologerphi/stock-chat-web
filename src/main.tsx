@@ -6,6 +6,8 @@ import './styles.css';
 import { useRoute } from './router.ts';
 import { useSettings } from './settings.ts';
 import { isOpenBatch, useBatches } from './batches.ts';
+import { syncCloud, useCloud, useDataVersion } from './cloud.ts';
+import { relTime } from './format.ts';
 import { isActive, useTasks } from './tasks.ts';
 import { setTheme, useTheme, type Theme } from './theme.ts';
 import * as I from './components/icons.tsx';
@@ -46,6 +48,25 @@ function TaskIndicator() {
   );
 }
 
+function CloudIndicator() {
+  const cloud = useCloud();
+  if (cloud.state === 'off') return null;
+  const tone = cloud.state === 'error' || cloud.state === 'blocked' ? 'error' : cloud.state === 'syncing' ? 'syncing' : cloud.pending > 0 ? 'pending' : 'synced';
+  const synced = cloud.lastPushAt && cloud.lastPullAt ? (cloud.lastPushAt > cloud.lastPullAt ? cloud.lastPushAt : cloud.lastPullAt) : (cloud.lastPushAt ?? cloud.lastPullAt);
+  const label =
+    tone === 'error'
+      ? `Cloud sync failed: ${cloud.message}`
+      : tone === 'syncing'
+        ? 'Syncing with Turso…'
+        : `${synced ? `Synced with Turso ${relTime(synced)}` : 'Not synced yet'}${cloud.pending ? ` · ${cloud.pending.toLocaleString('en-US')} local change${cloud.pending === 1 ? '' : 's'} to send` : ''}`;
+  return (
+    <button type="button" class="cloud-btn" data-tone={tone} title={`${label}\nClick to sync now`} aria-label={`${label}. Sync now`} disabled={tone === 'syncing'} onClick={() => void syncCloud({ manual: true })}>
+      {cloud.state === 'blocked' ? <I.CloudOff size={16} /> : <I.Cloud size={16} />}
+      <span class="cloud-btn__dot" aria-hidden="true" />
+    </button>
+  );
+}
+
 function ThemeSwitch() {
   const theme = useTheme();
   const pick = (t: Theme) => (e: MouseEvent) => {
@@ -69,6 +90,7 @@ function ThemeSwitch() {
 function App() {
   const route = useRoute();
   const settings = useSettings();
+  const dataVersion = useDataVersion();
   const missingKeys = !settings.fmpKey || !settings.geminiKey;
 
   useEffect(() => {
@@ -132,10 +154,12 @@ function App() {
         </nav>
         <div class="topbar__right">
           <TaskIndicator />
+          <CloudIndicator />
           <ThemeSwitch />
         </div>
       </header>
-      <main>{page}</main>
+      {/* A pull from Turso bumps dataVersion, which remounts the page so it reloads its data. */}
+      <main key={dataVersion}>{page}</main>
       <footer class="footer">
         <span>Data · Financial Modeling Prep</span>
         <span>Analysis · Google Gemini ({settings.geminiModel})</span>

@@ -1,5 +1,4 @@
-import type { Database } from '@tursodatabase/database-wasm';
-import { all, get, parseJson, placeholders, readStock, run, transaction, type StockDoc } from './db.ts';
+import { all, get, parseJson, placeholders, readStock, run, transaction, type StockDoc, type Database } from './db.ts';
 import type { Fmp } from './fmp.ts';
 import { cleanTag, resolveTags } from './tags.ts';
 import { HttpError, mapLimit } from './util.ts';

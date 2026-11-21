@@ -2,7 +2,7 @@
 
 A web app for exploring and analysing the US stock market. Market data comes from [FMP](https://financialmodelingprep.com); qualitative analysis (scores, tags, introductions, SVG diagrams) comes from Gemini.
 
-Meridian is a **single static page** with no backend. Data is stored in a SQLite database inside the browser via [`@tursodatabase/database-wasm`](https://www.npmjs.com/package/@tursodatabase/database-wasm), and FMP and Gemini are called straight from the page. It deploys to Vercel as plain static files.
+Meridian is a **single static page** with no backend. Data is stored in a SQLite database inside the browser via [`@tursodatabase/sync-wasm`](https://www.npmjs.com/package/@tursodatabase/sync-wasm), optionally synced with a [Turso Cloud](https://turso.tech) database, and FMP, Gemini and Turso are called straight from the page. It deploys to Vercel as plain static files.
 
 ## Features
 
@@ -11,7 +11,7 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 - **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
-- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), a separate batch model (only models that support `batchGenerateContent` are listed) and batch thinking level, FMP key with test, page size and universe sync (companies and ETFs).
+- **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), a separate batch model (only models that support `batchGenerateContent` are listed) and batch thinking level, FMP key with test, Turso Cloud sync (database URL and token, connection test, *Sync now*), page size and universe sync (companies and ETFs).
 - **Themes**: a switch in the top bar toggles between dark and a light theme modelled on VS Code's *Solarized Light*. The choice is saved in localStorage (`meridian.theme`). Until you pick one, the app follows the system `prefers-color-scheme`. Typography is sans-serif throughout (Inter Tight, JetBrains Mono for figures).
 - **LLM tasks**: two kinds, both using the FMP profile and the news from the last 30 days as context and returning structured JSON.
   - *Analysis*: one Gemini call returns every score with its reason, tags and the introduction. Run it for one stock from its list row or detail page, or for the whole page with **Batch analyse page**.
@@ -60,8 +60,8 @@ Cross-Origin-Embedder-Policy: require-corp
 
 ## Data & keys
 
-- **API keys** stay **only in the browser's localStorage** (`meridian.settings`) and are sent directly to FMP and Gemini. Enter them on the Settings page. The first visit with an FMP key syncs the company universe automatically.
-- **Stock data, scores, tags, prompts** live in `meridian.db`, a SQLite file in the [Origin Private File System](https://developer.mozilla.org/docs/Web/API/File_System_API/Origin_private_file_system). Each browser profile has its own database, and clearing the site's data deletes it.
+- **API keys** stay **only in the browser's localStorage** (`meridian.settings`) and are sent directly to FMP, Gemini and Turso. Enter them on the Settings page. The first visit with an FMP key syncs the company universe automatically.
+- **Stock data, scores, tags, prompts** live in `meridian-sync.db`, a SQLite file in the [Origin Private File System](https://developer.mozilla.org/docs/Web/API/File_System_API/Origin_private_file_system). Each browser profile has its own database, and clearing the site's data deletes it (and its link to Turso). A `meridian.db` left by earlier versions is copied in once on first start and then deleted.
 - OPFS file handles are exclusive, so the app can be open in **one tab at a time**; a second tab shows a message instead of corrupting the file.
 - Single-stock LLM tasks run in the page (three at a time). Analysis and diagram tasks for the same stock can run side by side because they write different columns. Queued tasks are lost if the page is closed or reloaded before they finish. Batch jobs run on Gemini's side and survive reloads (see above); Gemini keeps them for 48 hours.
 
@@ -76,9 +76,20 @@ Cross-Origin-Embedder-Policy: require-corp
 | `config` | JSON values: `prompts`, `meta` (last sync time) |
 | `llm_batches` | Gemini batch jobs: operation id, model, thinking, symbols, state, stats, error, timestamps, `applied` (results written to the stocks) |
 
-### Roadmap: Turso Cloud sync
+### Turso Cloud sync
 
-The local database is the source of truth for now. The plan is to sync it with [Turso Cloud](https://turso.tech) so data follows the user across devices. `@tursodatabase/sync-wasm` offers the same API with push / pull, so the data layer (`src/data/db.ts`) is the only place that should need to change.
+The local database keeps working offline; Turso Cloud is an optional copy that lets other browsers pick up the same data.
+
+1. Create a database and a **database token**: `turso db create meridian`, `turso db show meridian --url` and `turso db tokens create meridian` (or the database's *Create token* button in the dashboard, read & write). A Platform API token (`turso auth api-tokens …`) does not work: Turso rejects it on the database host, and Settings warns when one is pasted.
+2. Enter the URL (`libsql://…`) and token under **Settings → Turso Cloud sync**, use *Test connection*, then *Sync now*.
+
+How it behaves:
+
+- A full sync (push local changes, then pull remote ones) runs when the app opens and on *Sync now* (Settings or the cloud button in the top bar). Local writes are pushed on their own about 8 seconds after they settle (at most a minute later). Remote changes are pulled only on open or on demand; a pull that changes data reloads the current screen.
+- A browser with no local database yet downloads the remote one on first open. A browser that already has data merges it: local changes are pushed, then remote ones pulled. The schema is replicated too, so an empty Turso database needs no setup.
+- Rows are merged by primary key and the last write wins; concurrent edits to the same row are not combined.
+- After the first sync the browser stays **linked** to that database (localStorage key `meridian.cloud.linkedUrl`). Pointing Settings at a different URL pauses sync with a message; clear the site's data to link another database. Removing the URL just pauses sync.
+- The engine keeps its sync state next to the database (`meridian-sync.db-*` files in OPFS and `meridian-sync.db-info` in localStorage).
 
 ## Architecture
 
@@ -86,7 +97,9 @@ The local database is the source of truth for now. The plan is to sync it with [
 src/
   main.tsx, pages/, components/   Preact SPA (hash router), design system in styles.css
   api.ts                          façade used by the UI; validates input and calls the data layer
-  data/db.ts                      Turso wasm connection, schema, transactions, config
+  data/db.ts                      Turso wasm connection, schema, legacy import, transactions, config, write hook
+  data/remote.ts                  Turso URL / token settings, database link, Platform-token detection
+  data/cloud.ts                   Turso Cloud push / pull, sync stats, connection test, error messages
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
   data/heat.ts                    background "Refresh heat" job for every company or every ETF
   data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
@@ -94,6 +107,7 @@ src/
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue
   data/batch.ts                   batch analysis: build prompts for review, submit, poll and apply results
   batches.ts, tasks.ts            UI stores for batch jobs and in-page LLM tasks (polling, toasts)
+  cloud.ts                        UI store for Cloud sync: sync on open, debounced push after writes, top-bar state
   data/fmp.ts, data/gemini.ts     API clients
   types.ts                        shared types
 scripts/
@@ -102,7 +116,7 @@ scripts/
 vercel.json                       Vercel build settings and headers
 ```
 
-`@tursodatabase/database-wasm` loads its ~12 MB engine with `new URL(…, import.meta.url)`, which esbuild does not bundle. `scripts/build.ts` therefore emits the worker (`turso-worker.js`) and a content-hashed `turso-<hash>.wasm` next to the bundle and rewrites the package's URLs to match. The engine chunk is imported lazily, so the UI renders while it downloads.
+`@tursodatabase/sync-wasm` loads its ~12 MB engine with `new URL(…, import.meta.url)`, which esbuild does not bundle. `scripts/build.ts` therefore emits the worker (`turso-worker.js`) and a content-hashed `turso-<hash>.wasm` next to the bundle and rewrites the package's URLs to match. The engine chunk is imported lazily, so the UI renders while it downloads.
 
 ## Product spec
 
@@ -165,6 +179,7 @@ A separate tab lists ETFs (FMP screener with `isEtf=true`). Each row shows only 
 - Gemini model select.
 - Batch model and thinking level select.
 - FMP API key.
+- Turso Cloud sync: database URL and token, connection test, sync now.
 - Number of stocks displayed per page.
 
 ### LLM task and context
@@ -180,7 +195,7 @@ Both use the news, company description and other data fetched from FMP as contex
 - FMP API as the data source.
 - Gemini API as the analysis tool.
 - TypeScript 7, esbuild, Preact.
-- Browser SQLite via `@tursodatabase/database-wasm` for storage (later synced with Turso Cloud).
+- Browser SQLite via `@tursodatabase/sync-wasm` for storage, optionally synced with Turso Cloud.
 - localStorage for secrets.
 - No backend: a single static page hosted on Vercel.
 - Aesthetics: distinctive, sans-serif only; dark by default with a Solarized Light alternative.

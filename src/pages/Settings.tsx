@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { THINKING_LEVELS, usesThinkingBudget, type ThinkingLevel } from '../data/gemini.ts';
 import { fullTime, relTime } from '../format.ts';
+import { syncCloud, useCloud } from '../cloud.ts';
 import { updateSettings, useSettings } from '../settings.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
@@ -50,12 +51,13 @@ function ThinkingField({ id, label, model, value, onChange, slowNote }: { id: st
   );
 }
 
-function SecretInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+function SecretInput({ value, onChange, placeholder, id }: { value: string; onChange: (v: string) => void; placeholder: string; id?: string }) {
   const [shown, setShown] = useState(false);
   return (
     <div class="secret">
       <I.Key size={15} />
       <input
+        id={id}
         class="input"
         type={(shown ? 'text' : 'password') as 'text'}
         value={value}
@@ -83,6 +85,92 @@ function TestResult({ test }: { test: TestState }) {
     <span class={`test test--${test.state}`}>
       {test.state === 'ok' ? <I.Check size={13} /> : <I.X size={13} />} {test.message}
     </span>
+  );
+}
+
+function CloudPanel() {
+  const s = useSettings();
+  const cloud = useCloud();
+  const [test, setTest] = useState<TestState>({ state: 'idle' });
+  const url = api.normalizeTursoUrl(s.tursoUrl);
+  const linked = api.cloudLinkedUrl();
+  const platformToken = !!s.tursoToken && api.looksLikePlatformToken(s.tursoToken);
+  const ready = !!url && !!s.tursoToken;
+  const synced = [cloud.lastPushAt, cloud.lastPullAt].filter((t): t is string => !!t).sort().at(-1) ?? null;
+
+  const runTest = async () => {
+    setTest({ state: 'testing' });
+    try {
+      const r = await api.testTurso(s.tursoUrl, s.tursoToken);
+      const tables = r.tables === 0 ? 'empty database' : `${r.tables} table${r.tables === 1 ? '' : 's'}`;
+      setTest({ state: 'ok', message: `Connected in ${r.latencyMs} ms · ${tables}` });
+    } catch (e) {
+      setTest({ state: 'error', message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  let status: string;
+  if (cloud.state === 'off') status = 'Off — data stays in this browser only.';
+  else if (cloud.state === 'blocked' || cloud.state === 'error') status = cloud.message ?? 'Sync failed';
+  else if (cloud.state === 'syncing') status = 'Syncing…';
+  else status = synced ? `Synced ${relTime(synced)}` : 'Not synced yet — run a first sync to upload this browser’s data.';
+
+  return (
+    <section class="card panel">
+      <header class="panel__head">
+        <div>
+          <h2 class="panel__title">
+            <I.Cloud size={16} /> Turso Cloud sync
+          </h2>
+          <p class="panel__sub">Keeps this browser’s database in sync with a Turso database, so another browser can pick up the same data.</p>
+        </div>
+      </header>
+      <div class="field">
+        <label for="turso-url">Database URL</label>
+        <input
+          id="turso-url"
+          class="input"
+          value={s.tursoUrl}
+          placeholder="libsql://my-db-my-org.aws-us-east-1.turso.io"
+          autoComplete="off"
+          spellcheck={false}
+          onInput={(e) => { updateSettings({ tursoUrl: e.currentTarget.value.trim() }); setTest({ state: 'idle' }); }}
+        />
+        {s.tursoUrl && !url && <p class="field-hint field-hint--warn">That doesn’t look like a database URL.</p>}
+      </div>
+      <div class="field">
+        <label for="turso-token">Database token</label>
+        <SecretInput id="turso-token" value={s.tursoToken} onChange={(tursoToken) => { updateSettings({ tursoToken }); setTest({ state: 'idle' }); }} placeholder="Paste a database token" />
+        {platformToken ? (
+          <p class="field-hint field-hint--warn">This looks like a Platform API token. Sync needs a token for this database: run <code>turso db tokens create &lt;db&gt;</code>, or open the database in the Turso dashboard and create one.</p>
+        ) : (
+          <p class="field-hint">
+            A read-write token for this database (<code>turso db tokens create &lt;db&gt;</code>). It’s kept in localStorage with your other keys and sent only to Turso.
+          </p>
+        )}
+      </div>
+      <div class="field-row">
+        <button class="btn" onClick={runTest} disabled={!ready || test.state === 'testing'}>
+          <I.Bolt size={15} /> Test connection
+        </button>
+        <TestResult test={test} />
+      </div>
+      <div class="divider" />
+      <div class="field-row field-row--between">
+        <div>
+          <div class="field-title">Status</div>
+          <div class={`small ${cloud.state === 'error' || cloud.state === 'blocked' ? 'cloud-status--error' : 'muted'}`}>
+            <span title={synced ? fullTime(synced) : undefined}>{status}</span>
+            {cloud.state !== 'off' && cloud.pending > 0 && <span> · {cloud.pending.toLocaleString('en-US')} local change{cloud.pending === 1 ? '' : 's'} to send</span>}
+          </div>
+          {linked && cloud.state !== 'blocked' && <div class="muted small">Linked to {new URL(linked).host}</div>}
+        </div>
+        <button class="btn" onClick={() => void syncCloud({ manual: true })} disabled={cloud.state === 'off' || cloud.state === 'blocked' || cloud.state === 'syncing'}>
+          {cloud.state === 'syncing' ? <Spinner /> : <I.Refresh size={15} />}
+          {cloud.state === 'syncing' ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -156,7 +244,7 @@ export function Settings() {
         <h1 class="display display--page">
           Keys, models <em>&amp; preferences.</em>
         </h1>
-        <p class="lede">Everything stays in this browser. API keys live in localStorage and go straight to Gemini and FMP; market data and analyses are kept in a local SQLite database.</p>
+        <p class="lede">Everything stays in this browser unless you turn on Turso Cloud sync. API keys live in localStorage and go straight to Gemini, FMP and Turso; market data and analyses are kept in a local SQLite database.</p>
       </header>
 
       <section class="card panel">
@@ -244,6 +332,8 @@ export function Settings() {
           </button>
         </div>
       </section>
+
+      <CloudPanel />
 
       <section class="card panel">
         <header class="panel__head">

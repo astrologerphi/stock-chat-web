@@ -1,9 +1,18 @@
-import type { Database } from '@tursodatabase/database-wasm';
+import type { Database } from '@tursodatabase/sync-wasm';
 import type { Diagram, Leader } from '../types.ts';
+import { activeUrl, configuredToken, linkTo, unlink } from './remote.ts';
 
-/** SQLite file in the Origin Private File System (OPFS). Turso keeps `${DB_FILE}-wal` next to it. */
-export const DB_FILE = 'meridian.db';
+export type { Database };
+
+/**
+ * SQLite file in the Origin Private File System (OPFS). The sync engine keeps its WAL and change log in sibling
+ * files and a little metadata in localStorage under `${DB_FILE}-info`.
+ */
+export const DB_FILE = 'meridian-sync.db';
+/** Database file written by versions before Cloud sync; imported once, then removed. */
+const LEGACY_FILE = 'meridian.db';
 const TAB_LOCK = 'meridian.db';
+const SYNCED_TABLES = ['stocks', 'stock_tags', 'tags', 'stock_scores', 'config', 'llm_batches'];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS stocks (
@@ -202,13 +211,76 @@ async function open(): Promise<Database> {
   if (!(await acquireTabLock())) throw new Error('Meridian is already open in another tab. Close it, then reload this page.');
   void navigator.storage.persist?.().catch(() => false);
 
-  // Loaded lazily: the module fetches and instantiates the ~12 MB SQLite engine on import.
-  const { connect } = await import('@tursodatabase/database-wasm');
-  const db = await connect(DB_FILE);
+  // Loaded lazily: the module fetches and instantiates the ~13 MB SQLite engine on import.
+  const { connect } = await import('@tursodatabase/sync-wasm');
+  // `url` is a function so sync can be switched on later from Settings. When it returns a URL on a clean start,
+  // the engine downloads the remote database instead of creating an empty one.
+  const fresh = !(await opfsFile(DB_FILE));
+  if (fresh) unlink();
+  const bootstrapUrl = fresh ? activeUrl() : null;
+  const db = await connect({ path: DB_FILE, url: activeUrl, authToken: async () => configuredToken(), clientName: 'meridian-web' });
+  if (bootstrapUrl) linkTo(bootstrapUrl);
   await db.exec(SCHEMA);
   await migrate(db);
+  await importLegacy(db, connect);
   await backfillTagLibrary(db);
   return db;
+}
+
+async function opfsFile(name: string): Promise<File | null> {
+  try {
+    return await (await (await navigator.storage.getDirectory()).getFileHandle(name)).getFile();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Copies the pre-sync database into the synced one. The sync engine only pushes changes it recorded, so rows
+ * must be re-inserted rather than the old file adopted. Existing rows win (they may have come from the cloud).
+ * The old file is still open in the worker afterwards, so it is deleted on the next start.
+ */
+async function importLegacy(db: Database, connect: typeof import('@tursodatabase/sync-wasm').connect) {
+  const legacy = await opfsFile(LEGACY_FILE);
+  if (!legacy) return;
+  const done = await db.get("SELECT 1 FROM config WHERE key = 'legacy_import_done'");
+  if (done) {
+    const dir = await navigator.storage.getDirectory();
+    for (const name of [LEGACY_FILE, `${LEGACY_FILE}-wal`]) await dir.removeEntry(name).catch(() => {});
+    return;
+  }
+  if (legacy.size > 0) {
+    const old = await connect({ path: LEGACY_FILE });
+    try {
+      const tables = new Set(((await old.all("SELECT name FROM sqlite_schema WHERE type = 'table'")) as { name: string }[]).map((r) => r.name));
+      await db.exec('BEGIN');
+      try {
+        for (const table of SYNCED_TABLES) {
+          if (!tables.has(table)) continue;
+          const target = new Set(((await db.all(`PRAGMA table_info(${table})`)) as { name: string }[]).map((c) => c.name));
+          const cols = ((await old.all(`PRAGMA table_info(${table})`)) as { name: string }[]).map((c) => c.name).filter((c) => target.has(c));
+          const rows = (await old.all(`SELECT ${cols.join(', ')} FROM ${table}`)) as Row[];
+          const perInsert = Math.max(1, Math.floor(900 / cols.length));
+          for (let i = 0; i < rows.length; i += perInsert) {
+            const batch = rows.slice(i, i + perInsert);
+            await db.run(
+              `INSERT OR IGNORE INTO ${table} (${cols.join(', ')}) VALUES ${batch.map(() => `(${placeholders(cols.length)})`).join(', ')}`,
+              ...batch.flatMap((r) => cols.map((c) => r[c] ?? null)),
+            );
+          }
+        }
+        await db.run("INSERT INTO config (key, value) VALUES ('legacy_import_done', 'true') ON CONFLICT(key) DO NOTHING");
+        await db.exec('COMMIT');
+      } catch (err) {
+        await db.exec('ROLLBACK').catch(() => {});
+        throw err;
+      }
+    } finally {
+      await old.close().catch(() => {});
+    }
+  } else {
+    await db.run("INSERT INTO config (key, value) VALUES ('legacy_import_done', 'true') ON CONFLICT(key) DO NOTHING");
+  }
 }
 
 /** Brings databases created by older versions up to the current schema. */
@@ -256,18 +328,28 @@ export async function get<T = Row>(sql: string, ...args: unknown[]): Promise<T |
   return ((await (await getDb()).get(sql, ...args)) ?? undefined) as T | undefined;
 }
 
-/** Serialises writes so that statements never interleave with an open transaction. */
+/** Serialises writes (and sync) so that statements never interleave with an open transaction. */
 let writeTail: Promise<unknown> = Promise.resolve();
-function exclusive<T>(fn: () => Promise<T>): Promise<T> {
+export function exclusive<T>(fn: () => Promise<T>): Promise<T> {
   const result = writeTail.then(fn);
   writeTail = result.catch(() => {});
   return result;
 }
 
-export const run = (sql: string, ...args: unknown[]) => exclusive(async () => (await getDb()).run(sql, ...args));
+const writeListeners = new Set<() => void>();
+/** Called after every local write; Cloud sync uses it to schedule a push. */
+export function onLocalWrite(listener: () => void) {
+  writeListeners.add(listener);
+}
+function wrote<T>(result: Promise<T>): Promise<T> {
+  void result.then(() => writeListeners.forEach((l) => l()), () => {});
+  return result;
+}
+
+export const run = (sql: string, ...args: unknown[]) => wrote(exclusive(async () => (await getDb()).run(sql, ...args)));
 
 export function transaction<T>(fn: (db: Database) => Promise<T>): Promise<T> {
-  return exclusive(async () => {
+  return wrote(exclusive(async () => {
     const db = await getDb();
     await db.exec('BEGIN');
     try {
@@ -278,7 +360,7 @@ export function transaction<T>(fn: (db: Database) => Promise<T>): Promise<T> {
       await db.exec('ROLLBACK').catch(() => {});
       throw err;
     }
-  });
+  }));
 }
 
 export async function getConfig<T>(key: string): Promise<T | null> {
