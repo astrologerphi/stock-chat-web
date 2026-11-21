@@ -3,7 +3,9 @@ import { api, type ListParams } from '../api.ts';
 import { countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { navigate, scrollToTop } from '../router.ts';
 import { useSettings } from '../settings.ts';
+import { isOpenBatch, useBatches, useOnBatchesFinished } from '../batches.ts';
 import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { BatchBar, BatchModal } from '../components/BatchModal.tsx';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
 import type { Facet, ListResponse, PromptConfig } from '../types.ts';
@@ -48,6 +50,8 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const [tagFacets, setTagFacets] = useState<Facet[] | null>(null);
   const [search, setSearch] = useState(params.q);
   const tasks = useTasks();
+  const { batches } = useBatches();
+  const [batchSymbols, setBatchSymbols] = useState<string[] | null>(null);
   const autoSynced = useRef(false);
   const requestId = useRef(0);
   const tableScroll = useRef<HTMLDivElement>(null);
@@ -99,12 +103,12 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
     startSync();
   }, [sync, settings.fmpKey]);
 
-  useOnTasksFinished(
-    useCallback(() => {
-      void load(true);
-      api.tags().then(setTagFacets).catch(() => {});
-    }, [load]),
-  );
+  const onFinished = useCallback(() => {
+    void load(true);
+    api.tags().then(setTagFacets).catch(() => {});
+  }, [load]);
+  useOnTasksFinished(onFinished);
+  useOnBatchesFinished(onFinished);
 
   useEffect(() => {
     if (search === params.q) return;
@@ -131,7 +135,8 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const scorePrompts = prompts?.scorePrompts ?? [];
   const rows = data?.items ?? [];
   const pageSymbols = rows.map((r) => r.symbol);
-  const pageBusy = pageSymbols.filter((s) => { const t = tasks.get(taskKey('analysis', s)); return t && isActive(t); }).length;
+  const inBatch = useMemo(() => new Set(batches.filter(isOpenBatch).flatMap((b) => b.symbols)), [batches]);
+  const batchable = pageSymbols.filter((s) => !inBatch.has(s));
   const hasFilters = params.q || params.exchange.length || params.country.length || params.tags.length;
   const needsKeys = !settings.fmpKey;
   const empty = sync && sync.total === 0;
@@ -189,6 +194,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
 
       <SyncBar sync={sync} />
       <HeatJobBar job={heat.job} onStop={heat.stop} />
+      <BatchBar />
 
       <section class="toolbar">
         <label class="search">
@@ -221,12 +227,16 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         <HeatButton kind="stocks" job={heat.job} disabled={!!sync?.running || !sync?.total} onStart={heat.start} />
         <button
           class="btn btn--primary"
-          disabled={!rows.length || pageBusy > 0}
-          onClick={() => runAnalysis(pageSymbols, 'analysis')}
-          title="Score, tag and introduce every stock on this page. Generate diagrams from a stock's detail page."
+          disabled={!batchable.length}
+          onClick={() => setBatchSymbols(batchable)}
+          title={
+            rows.length && !batchable.length
+              ? 'Every stock on this page is already in a running batch'
+              : 'Review, then send one Gemini batch job that scores, tags and introduces every stock on this page. Generate diagrams from a stock’s detail page.'
+          }
         >
-          {pageBusy ? <Spinner /> : <I.Sparkle size={16} />}
-          {pageBusy ? `Analysing ${pageBusy}…` : `Analyse page (${rows.length})`}
+          <I.Stack size={16} />
+          Batch analyse page ({batchable.length})
         </button>
       </section>
 
@@ -341,6 +351,10 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
                             <span class={`state state--${task.state}`}>
                               <Spinner size={11} /> {task.state === 'queued' ? 'Queued' : 'Analysing'}
                             </span>
+                          ) : inBatch.has(r.symbol) ? (
+                            <span class="state state--batch" title="Waiting for a Gemini batch job">
+                              <I.Clock size={12} /> In batch
+                            </span>
                           ) : (
                             <span class={r.lastLlmRunAt ? '' : 'muted'}>{relTime(r.lastLlmRunAt)}</span>
                           )}
@@ -373,6 +387,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         </div>
         {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); scrollToTop(tableScroll.current, 'smooth'); }} />}
       </section>
+      {batchSymbols && <BatchModal symbols={batchSymbols} onClose={() => setBatchSymbols(null)} />}
     </div>
   );
 }

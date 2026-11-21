@@ -5,6 +5,7 @@ import { useEffect } from 'preact/hooks';
 import './styles.css';
 import { useRoute } from './router.ts';
 import { useSettings } from './settings.ts';
+import { isOpenBatch, useBatches } from './batches.ts';
 import { isActive, useTasks } from './tasks.ts';
 import { setTheme, useTheme, type Theme } from './theme.ts';
 import * as I from './components/icons.tsx';
@@ -18,17 +19,30 @@ import { EtfList } from './pages/EtfList.tsx';
 
 function TaskIndicator() {
   const tasks = useTasks();
+  const { batches } = useBatches();
   const all = [...tasks.values()];
   const running = all.filter((t) => t.state === 'running').length;
   const queued = all.filter((t) => t.state === 'queued').length;
-  if (!running && !queued) return null;
+  const open = batches.filter(isOpenBatch);
   return (
-    <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
-      <Spinner size={12} />
-      <span>
-        {running} running{queued ? ` · ${queued} queued` : ''}
-      </span>
-    </span>
+    <>
+      {(running > 0 || queued > 0) && (
+        <span class="task-ind" title={all.filter(isActive).map((t) => `${t.symbol} ${t.kind}: ${t.state}`).join('\n')}>
+          <Spinner size={12} />
+          <span>
+            {running} running{queued ? ` · ${queued} queued` : ''}
+          </span>
+        </span>
+      )}
+      {open.length > 0 && (
+        <a class="task-ind" href="#/" title={open.map((b) => `${b.symbols.length} stocks · ${b.state}`).join('\n')}>
+          <I.Clock size={13} />
+          <span>
+            {open.length === 1 ? '1 batch' : `${open.length} batches`}
+          </span>
+        </a>
+      )}
+    </>
   );
 }
 

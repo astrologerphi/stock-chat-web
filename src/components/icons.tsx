@@ -51,3 +51,5 @@ export const Sun = icon(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v
 export const Moon = icon(<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" />);
 export const Layers = icon(<><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></>);
 export const Rows = icon(<path d="M4 6h16M4 12h16M4 18h16" />);
+export const Clock = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
+export const Stack = icon(<><rect x="4" y="9" width="16" height="11" rx="2" /><path d="M7 6h10M9 3h6" /></>);

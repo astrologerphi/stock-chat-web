@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Gemini Batch API jobs. id is the operation name (batches/...); results are applied once, on the first check after they finish.
+CREATE TABLE IF NOT EXISTS llm_batches (
+  id TEXT PRIMARY KEY,
+  model TEXT NOT NULL,
+  thinking TEXT NOT NULL DEFAULT 'default',
+  symbols TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL DEFAULT 'pending',
+  stats TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  checked_at TEXT,
+  finished_at TEXT,
+  applied INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 export interface StockProfile {

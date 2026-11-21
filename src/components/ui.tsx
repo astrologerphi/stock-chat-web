@@ -1,3 +1,4 @@
+import { createPortal } from 'preact/compat';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { HEAT_TIER_LABEL, heatTier, hue, scoreTone, type HeatTier } from '../format.ts';
@@ -289,7 +290,7 @@ export function Toasts() {
   );
 }
 
-export function Modal({ onClose, children, label }: { onClose: () => void; children: ComponentChildren; label: string }) {
+export function Modal({ onClose, children, label, variant }: { onClose: () => void; children: ComponentChildren; label: string; variant?: 'sheet' }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -299,15 +300,17 @@ export function Modal({ onClose, children, label }: { onClose: () => void; child
       document.body.style.overflow = '';
     };
   }, [onClose]);
-  return (
-    <div class="modal" role="dialog" aria-label={label} onClick={onClose}>
+  // Portalled so ancestors with transforms or containment in the app shell can't clip the fixed overlay.
+  return createPortal(
+    <div class={`modal${variant ? ` modal--${variant}` : ''}`} role="dialog" aria-modal="true" aria-label={label} onClick={onClose}>
       <button class="modal__x" onClick={onClose} aria-label="Close">
         <I.X size={20} />
       </button>
       <div class="modal__body" onClick={(e) => e.stopPropagation()}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

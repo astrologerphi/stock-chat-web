@@ -1,4 +1,4 @@
-import { transaction, type StockDoc } from './db.ts';
+import { parseJson, transaction, type StockDoc } from './db.ts';
 import { Fmp, type FmpNews } from './fmp.ts';
 import { generateJson, type ThinkingLevel } from './gemini.ts';
 import { getPrompts } from './prompts.ts';
@@ -6,14 +6,14 @@ import { mergeTags, normalizeTags, refreshProfile, replaceTags, updateStock } fr
 import { isoDate } from './util.ts';
 import type { Diagram, PromptConfig, TaskKind, TaskStatus } from '../types.ts';
 
-interface Keys {
+export interface Keys {
   gemini: string;
   fmp: string;
   model: string;
   thinking: ThinkingLevel;
 }
 
-interface LlmResult {
+export interface LlmResult {
   scores?: { id: string; score: number; reason: string }[];
   tags?: string[];
   introduction?: string;
@@ -76,7 +76,7 @@ const PALETTE = `Canvas background #0E1013 (fill the whole viewBox with it). Pan
 Text: primary #EDE9E1, secondary #9AA0AA. Accents: chartreuse #C8F560, mint #5EE6C4, coral #FF8A5B, periwinkle #8AB4FF, amber #F5C45E.
 Fonts (system sans-serif only, never serif): font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" everywhere; titles font-weight="600" with slightly tight letter-spacing.`;
 
-const SYSTEM_ANALYSIS = `You are a senior equity research analyst.
+export const SYSTEM_ANALYSIS = `You are a senior equity research analyst.
 You analyse US-listed companies using only the supplied context plus well-established public knowledge, and you are calibrated, specific and concise.
 You return a single JSON object that strictly follows the provided JSON schema.`;
 
@@ -125,7 +125,7 @@ function buildContext(stock: StockDoc, news: FmpNews[]): string[] {
   ];
 }
 
-function buildAnalysisPrompt(stock: StockDoc, news: FmpNews[], prompts: PromptConfig): string {
+export function buildAnalysisPrompt(stock: StockDoc, news: FmpNews[], prompts: PromptConfig): string {
   const sections = [...buildContext(stock, news), '# Tasks'];
   if (prompts.scorePrompts.length) {
     sections.push(
@@ -157,7 +157,7 @@ Style: elegant, editorial, modern data-visualisation with clear hierarchy and wh
   ].join('\n\n');
 }
 
-function buildAnalysisSchema(prompts: PromptConfig): object {
+export function buildAnalysisSchema(prompts: PromptConfig): object {
   const properties: Record<string, object> = {};
   const required: string[] = [];
   if (prompts.scorePrompts.length) {
@@ -215,7 +215,7 @@ export function sanitizeSvg(raw: string): string {
   return svg;
 }
 
-async function loadContext(symbol: string, keys: Keys, force: boolean) {
+export async function loadContext(symbol: string, keys: Pick<Keys, 'fmp'>, force: boolean) {
   const fmp = new Fmp(keys.fmp);
   const to = new Date();
   const from = new Date(to.getTime() - 30 * 86_400_000);
@@ -239,7 +239,11 @@ async function runAnalysis(symbol: string, keys: Keys) {
     prompt: buildAnalysisPrompt(stock, news, prompts),
     schema: buildAnalysisSchema(prompts),
   });
+  await applyAnalysis(symbol, result, keys.model, prompts);
+}
 
+/** Stores scores, tags and introduction from an analysis answer (interactive or batch). */
+export async function applyAnalysis(symbol: string, result: LlmResult, model: string, prompts: PromptConfig) {
   const scores = new Map<string, { score: number; reason: string }>();
   for (const s of result.scores ?? []) {
     if (!prompts.scorePrompts.some((p) => p.id === s.id)) continue;
@@ -249,13 +253,17 @@ async function runAnalysis(symbol: string, keys: Keys) {
 
   const llmTags = normalizeTags(result.tags ?? []).slice(0, 10);
   await transaction(async (db) => {
+    // Read inside the transaction so tag edits made since the request was sent are respected.
+    const row = (await db.get('SELECT tag_edits FROM stocks WHERE symbol = ?', symbol)) as { tag_edits: string } | undefined;
+    if (!row) return;
+    const edits = parseJson(row.tag_edits, { added: [] as string[], removed: [] as string[] });
     await updateStock(
       symbol,
       {
         llm_tags: JSON.stringify(llmTags),
         introduction: String(result.introduction ?? '').trim(),
         last_llm_run_at: new Date().toISOString(),
-        llm_model: keys.model,
+        llm_model: model,
         llm_error: null,
       },
       db,
@@ -268,7 +276,7 @@ async function runAnalysis(symbol: string, keys: Keys) {
         ...[...scores].flatMap(([id, s]) => [symbol, id, s.score, s.reason]),
       );
     }
-    await replaceTags(db, symbol, mergeTags(llmTags, stock.tagEdits), 'llm');
+    await replaceTags(db, symbol, mergeTags(llmTags, edits), 'llm');
   });
 }
 
