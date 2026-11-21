@@ -223,7 +223,8 @@ select {
   align-items: center;
   gap: 24px;
   height: 64px;
-  padding: 0 max(24px, calc((100vw - var(--maxw)) / 2));
+  /* Always the wide measure, never the page's, so the bar doesn't shift between tabs. */
+  padding: 0 max(24px, calc((100vw - var(--maxw-wide)) / 2));
   background: var(--chrome);
   backdrop-filter: saturate(160%) blur(18px);
   -webkit-backdrop-filter: saturate(160%) blur(18px);
@@ -343,7 +344,7 @@ main {
   padding: 0 24px 80px;
 }
 
-/* The stock list gets the wide measure; the top bar follows so their edges stay aligned.
+/* The stock list gets the wide measure, matching the top bar's edges.
    The ETF list has four columns and keeps the standard measure. */
 #app:has(.page--list:not(.page--etfs)) {
   --maxw: var(--maxw-wide);
