@@ -84,7 +84,7 @@ export function BatchModal({ symbols, onClose }: { symbols: string[]; onClose: (
           <div class="bsheet__state" aria-live="polite">
             <Spinner size={18} />
             <p>
-              Loading profiles and 30 days of news from FMP · {fmt(phase.done)} of {fmt(phase.total)}
+              Loading profiles and the latest 30 news articles from FMP · {fmt(phase.done)} of {fmt(phase.total)}
             </p>
             <div class="progress">
               <i style={{ width: `${Math.max(3, phase.total ? (phase.done / phase.total) * 100 : 0)}%` }} />

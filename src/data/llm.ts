@@ -84,9 +84,12 @@ const SYSTEM_DIAGRAMS = `You are a world-class information designer with deep eq
 You turn the supplied company context plus well-established public knowledge into accurate, elegant SVG diagrams.
 You return a single JSON object that strictly follows the provided JSON schema.`;
 
+/** Latest news articles added to every LLM context, regardless of their age. */
+export const CONTEXT_NEWS_LIMIT = 30;
+
 function trimNews(news: FmpNews[]): string {
   return news
-    .slice(0, 40)
+    .slice(0, CONTEXT_NEWS_LIMIT)
     .map((n) => `- [${n.publishedDate.slice(0, 10)}] ${n.title} (${n.site})${n.text ? ` — ${n.text.slice(0, 280)}` : ''}`)
     .join('\n');
 }
@@ -217,11 +220,9 @@ export function sanitizeSvg(raw: string): string {
 
 export async function loadContext(symbol: string, keys: Pick<Keys, 'fmp'>, force: boolean) {
   const fmp = new Fmp(keys.fmp);
-  const to = new Date();
-  const from = new Date(to.getTime() - 30 * 86_400_000);
   const [stock, news] = await Promise.all([
     refreshProfile(fmp, symbol, { force }),
-    fmp.news(symbol, { from: isoDate(from), to: isoDate(to), limit: 40 }).catch(() => [] as FmpNews[]),
+    fmp.news(symbol, { limit: CONTEXT_NEWS_LIMIT }).catch(() => [] as FmpNews[]),
   ]);
   if (!stock) throw new Error(`Unknown symbol ${symbol}`);
   return { stock, news };
