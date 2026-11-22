@@ -4,7 +4,8 @@ import { countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { navigate, scrollToTop } from '../router.ts';
 import { useSettings } from '../settings.ts';
 import { isOpenBatch, useBatches, useOnBatchesFinished } from '../batches.ts';
-import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { isActive, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
+import { toast } from '../toast.ts';
 import { BatchBar, BatchModal } from '../components/BatchModal.tsx';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FilterMenu, FloatGauge, Heat, Pager, ScoreCell, Spinner, type Option } from '../components/ui.tsx';
@@ -21,6 +22,7 @@ function readParams(params: URLSearchParams, pageSize: number): ListParams {
     exchange: csv(params.get('exchange')),
     country: csv(params.get('country')),
     tags: csv(params.get('tags')),
+    starred: params.get('starred') === '1',
   };
 }
 
@@ -33,6 +35,7 @@ function writeParams(p: ListParams, replace = false) {
   if (p.exchange.length) qs.set('exchange', p.exchange.join(','));
   if (p.country.length) qs.set('country', p.country.join(','));
   if (p.tags.length) qs.set('tags', p.tags.join(','));
+  if (p.starred) qs.set('starred', '1');
   navigate('/', qs, replace);
 }
 
@@ -49,6 +52,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const [exchanges, setExchanges] = useState<Facet[] | null>(null);
   const [tagFacets, setTagFacets] = useState<Facet[] | null>(null);
   const [search, setSearch] = useState(params.q);
+  const [starredTotal, setStarredTotal] = useState<number | null>(null);
   const tasks = useTasks();
   const { batches } = useBatches();
   const [batchSymbols, setBatchSymbols] = useState<string[] | null>(null);
@@ -81,6 +85,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
     api.countries().then(setCountries).catch(() => setCountries([]));
     api.exchanges().then(setExchanges).catch(() => setExchanges([]));
     api.tags().then(setTagFacets).catch(() => setTagFacets([]));
+    api.starredCount().then(setStarredTotal).catch(() => {});
   }, []);
 
   useEffect(() => void load(), [load]);
@@ -117,6 +122,18 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   }, [search]);
 
   const set = (patch: Partial<ListParams>) => writeParams({ ...params, page: 1, ...patch });
+  const toggleStar = async (symbol: string, starred: boolean) => {
+    const patch = (on: boolean) => setData((d) => (d ? { ...d, items: d.items.map((r) => (r.symbol === symbol ? { ...r, starred: on } : r)) } : d));
+    patch(starred);
+    setStarredTotal((n) => (n == null ? n : Math.max(0, n + (starred ? 1 : -1))));
+    try {
+      await api.setStarred(symbol, starred);
+    } catch (e) {
+      patch(!starred);
+      setStarredTotal((n) => (n == null ? n : Math.max(0, n + (starred ? -1 : 1))));
+      toast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  };
   const sortProps = { sort: params.sort, order: params.order, onSort: (sort: string, order: 'asc' | 'desc') => set({ sort, order }) };
 
   const countryOptions: Option[] | null = countries?.map((c) => ({
@@ -137,7 +154,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
   const pageSymbols = rows.map((r) => r.symbol);
   const inBatch = useMemo(() => new Set(batches.filter(isOpenBatch).flatMap((b) => b.symbols)), [batches]);
   const batchable = pageSymbols.filter((s) => !inBatch.has(s));
-  const hasFilters = params.q || params.exchange.length || params.country.length || params.tags.length;
+  const hasFilters = params.q || params.starred || params.exchange.length || params.country.length || params.tags.length;
   const needsKeys = !settings.fmpKey;
   const empty = sync && sync.total === 0;
 
@@ -207,6 +224,17 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           )}
           <kbd>/</kbd>
         </label>
+        <button
+          type="button"
+          class={`filter__btn star-filter${params.starred ? ' is-active' : ''}`}
+          aria-pressed={params.starred}
+          title={params.starred ? 'Show every company' : 'Show only starred companies'}
+          onClick={() => set({ starred: !params.starred })}
+        >
+          <I.Star size={15} fill={params.starred ? 'currentColor' : 'none'} />
+          Starred
+          {starredTotal ? <span class="filter__count">{starredTotal.toLocaleString('en-US')}</span> : null}
+        </button>
         <FilterMenu label="Exchange" icon={<I.Building size={15} />} options={exchangeOptions} selected={params.exchange} onChange={(v) => set({ exchange: v })} />
         <FilterMenu
           label="Country"
@@ -219,7 +247,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
         />
         <FilterMenu label="Tags" icon={<I.Tag size={15} />} options={tagOptions} selected={params.tags} onChange={(v) => set({ tags: v })} searchable hint={tagOptions?.length ? undefined : 'Tags appear after running an analysis'} />
         {hasFilters ? (
-          <button class="link-btn" onClick={() => writeParams({ ...params, page: 1, q: '', exchange: [], country: [], tags: [] })}>
+          <button class="link-btn" onClick={() => writeParams({ ...params, page: 1, q: '', exchange: [], country: [], tags: [], starred: false })}>
             Reset
           </button>
         ) : null}
@@ -361,15 +389,17 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
                         </td>
                         <td class="actions-col">
                           <button
-                            class="icon-btn"
-                            disabled={!!busy}
-                            title={`Score, tag and introduce ${r.symbol}`}
+                            type="button"
+                            class={`icon-btn star-btn${r.starred ? ' is-on' : ''}`}
+                            aria-pressed={r.starred}
+                            aria-label={`${r.starred ? 'Unstar' : 'Star'} ${r.symbol}`}
+                            title={r.starred ? 'Starred · click to unstar' : 'Star'}
                             onClick={(e) => {
                               e.stopPropagation();
-                              void runAnalysis([r.symbol], 'analysis');
+                              void toggleStar(r.symbol, !r.starred);
                             }}
                           >
-                            <I.Bolt size={15} />
+                            <I.Star size={16} fill={r.starred ? 'currentColor' : 'none'} />
                           </button>
                         </td>
                       </tr>
@@ -380,7 +410,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           {data && !rows.length && !loading && (
             <div class="empty">
               <I.Search size={22} />
-              <p>{sync?.total ? 'No companies match these filters.' : sync?.running ? 'Loading the market…' : 'No companies yet.'}</p>
+              <p>{params.starred && !params.q && !params.exchange.length && !params.country.length && !params.tags.length ? 'No starred companies yet. Star one with the ☆ at the end of its row.' : sync?.total ? 'No companies match these filters.' : sync?.running ? 'Loading the market…' : 'No companies yet.'}</p>
             </div>
           )}
           {error && <div class="empty empty--error">{error}</div>}

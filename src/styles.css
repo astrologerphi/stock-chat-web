@@ -1527,6 +1527,28 @@ main {
   text-align: right;
 }
 
+.star-btn.is-on {
+  color: var(--amber);
+}
+
+.star-btn.is-on:hover:not(:disabled) {
+  color: var(--amber);
+  background: rgb(var(--amber-rgb, 181 137 0) / 0.12);
+  border-color: rgb(var(--amber-rgb, 181 137 0) / 0.3);
+}
+
+.star-btn svg {
+  transition: transform 0.2s var(--ease);
+}
+
+.star-btn:active svg {
+  transform: scale(0.82);
+}
+
+.star-filter.is-active svg {
+  color: var(--amber);
+}
+
 .empty {
   display: grid;
   place-items: center;

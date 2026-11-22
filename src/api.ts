@@ -8,7 +8,7 @@ import { getHeatJob, startHeatJob, stopHeatJob } from './data/heat.ts';
 import { enqueue, getTaskStatuses } from './data/llm.ts';
 import { getPrompts, savePrompts } from './data/prompts.ts';
 import { etfHoldings, etfInfo, priceHistory } from './data/market.ts';
-import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setTags, tagFacets } from './data/stocks.ts';
+import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setStarred, setTags, starredCount, tagFacets } from './data/stocks.ts';
 import { getSyncStatus, startSync } from './data/sync.ts';
 import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
@@ -30,6 +30,7 @@ export interface ListParams {
   exchange: string[];
   country: string[];
   tags: string[];
+  starred?: boolean;
 }
 
 const keys = () => {
@@ -70,6 +71,7 @@ export const api = {
       exchanges: listParam(p.exchange),
       countries: listParam(p.country),
       tags: listParam(p.tags),
+      starred: !!p.starred,
     });
   },
   async heat(symbols: string[]) {
@@ -106,6 +108,10 @@ export const api = {
     if (!saved) throw new HttpError(404, 'Stock not found');
     return { tags: saved };
   },
+  async setStarred(symbol: string, starred: boolean) {
+    if (!(await setStarred(checkSymbol(symbol), starred))) throw new HttpError(404, 'Stock not found');
+  },
+  starredCount: (kind: ListKind = 'stocks'): Promise<number> => starredCount(kind),
   countries: (): Promise<Facet[]> => countryFacets(),
   exchanges: (kind: ListKind = 'stocks'): Promise<Facet[]> => exchangeFacets(kind),
   tags: (): Promise<Facet[]> => tagFacets(),

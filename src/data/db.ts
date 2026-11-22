@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS stocks (
   change_percentage REAL,
   active INTEGER NOT NULL DEFAULT 1,
   is_etf INTEGER NOT NULL DEFAULT 0,
+  starred INTEGER NOT NULL DEFAULT 0,
   float_shares REAL,
   outstanding_shares REAL,
   float_ratio REAL,
@@ -51,7 +52,7 @@ CREATE INDEX IF NOT EXISTS stocks_float_ratio ON stocks (active, float_ratio);
 CREATE INDEX IF NOT EXISTS stocks_last_llm_run_at ON stocks (active, last_llm_run_at);
 CREATE INDEX IF NOT EXISTS stocks_country ON stocks (country);
 CREATE INDEX IF NOT EXISTS stocks_exchange ON stocks (exchange);
--- Indexes on is_etf are created in migrate(), after the column exists in older databases.
+-- Indexes on is_etf and starred are created in migrate(), after the column exists in older databases.
 
 CREATE TABLE IF NOT EXISTS stock_tags (
   symbol TEXT NOT NULL,
@@ -123,6 +124,7 @@ export interface StockDoc {
   changePercentage: number | null;
   active: boolean;
   isEtf: boolean;
+  starred: boolean;
   floatShares: number | null;
   outstandingShares: number | null;
   floatRatio: number | null;
@@ -170,6 +172,7 @@ export function readStock(r: Row): StockDoc {
     changePercentage: num(r.change_percentage),
     active: r.active == null ? true : Number(r.active) === 1,
     isEtf: Number(r.is_etf) === 1,
+    starred: Number(r.starred) === 1,
     floatShares: num(r.float_shares),
     outstandingShares: num(r.outstanding_shares),
     floatRatio: num(r.float_ratio),
@@ -287,9 +290,11 @@ async function importLegacy(db: Database, connect: typeof import('@tursodatabase
 async function migrate(db: Database) {
   const columns = (await db.all('PRAGMA table_info(stocks)')) as { name: string }[];
   if (!columns.some((c) => c.name === 'is_etf')) await db.exec('ALTER TABLE stocks ADD COLUMN is_etf INTEGER NOT NULL DEFAULT 0');
+  if (!columns.some((c) => c.name === 'starred')) await db.exec('ALTER TABLE stocks ADD COLUMN starred INTEGER NOT NULL DEFAULT 0');
   await db.exec(`
     CREATE INDEX IF NOT EXISTS stocks_kind_market_cap ON stocks (active, is_etf, market_cap);
     CREATE INDEX IF NOT EXISTS stocks_kind_heat ON stocks (active, is_etf, heat);
+    CREATE INDEX IF NOT EXISTS stocks_starred ON stocks (starred) WHERE starred = 1;
   `);
 }
 

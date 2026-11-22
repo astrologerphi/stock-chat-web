@@ -38,6 +38,7 @@ export interface StockRow {
   scores: Record<string, number>;
   tags: string[];
   lastLlmRunAt: string | null;
+  starred: boolean;
 }
 
 export interface StockDetail extends Omit<StockRow, 'scores'> {
