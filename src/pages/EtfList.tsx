@@ -188,7 +188,7 @@ export function EtfList({ params: rawParams }: { params: URLSearchParams }) {
       )}
 
       <section class={`table-wrap card${loading && data ? ' is-loading' : ''}`}>
-        <div class="table-scroll" ref={tableScroll}>
+        <div class="table-scroll table-scroll--fixed" ref={tableScroll} style={{ '--rows': params.pageSize }}>
           <table class="stocks stocks--plain">
             <thead>
               <tr>
@@ -247,7 +247,7 @@ export function EtfList({ params: rawParams }: { params: URLSearchParams }) {
           )}
           {error && <div class="empty empty--error">{error}</div>}
         </div>
-        {data && data.total > 0 && (
+        {data && (
           <Pager
             page={params.page}
             total={data.total}

@@ -405,7 +405,8 @@ main {
   }
 
   .page--list .table-scroll {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
+    height: var(--list-h, auto);
     min-height: 0;
     overflow: auto;
   }
@@ -1086,6 +1087,12 @@ main {
 
 .table-scroll {
   overflow-x: auto;
+}
+
+/* Lists keep the height of a full page (header + page-size rows), so short pages leave empty space instead of collapsing. */
+.table-scroll--fixed {
+  --list-h: calc(var(--list-head, 46px) + var(--rows, 10) * var(--list-row, 64px));
+  min-height: var(--list-h);
 }
 
 .stocks {

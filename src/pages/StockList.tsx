@@ -261,7 +261,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
       )}
 
       <section class={`table-wrap card${loading && data ? ' is-loading' : ''}`}>
-        <div class="table-scroll" ref={tableScroll}>
+        <div class="table-scroll table-scroll--fixed" ref={tableScroll} style={{ '--rows': params.pageSize }}>
           <table class="stocks">
             <thead>
               <tr>
@@ -385,7 +385,7 @@ export function StockList({ params: rawParams }: { params: URLSearchParams }) {
           )}
           {error && <div class="empty empty--error">{error}</div>}
         </div>
-        {data && data.total > 0 && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); scrollToTop(tableScroll.current, 'smooth'); }} />}
+        {data && <Pager page={params.page} total={data.total} pageSize={params.pageSize} onPage={(p) => { writeParams({ ...params, page: p }); scrollToTop(tableScroll.current, 'smooth'); }} />}
       </section>
       {batchSymbols && <BatchModal symbols={batchSymbols} onClose={() => setBatchSymbols(null)} />}
     </div>
