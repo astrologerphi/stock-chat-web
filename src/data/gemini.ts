@@ -81,14 +81,32 @@ export interface JsonRequest {
 
 const modelId = (model: string) => (model || DEFAULT_MODEL).replace(/^models\//, '');
 
-/** A `GenerateContentRequest` that asks for JSON matching `schema`. */
-function contentRequest(opts: JsonRequest, thinking: object | undefined) {
+/** Converts a JSON Schema (lower-case types) to Gemini's OpenAPI-style `Schema` (upper-case `Type` enum). */
+export function toGeminiSchema(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
+  if (!schema || typeof schema !== 'object') return schema;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === 'type') out.type = String(v).toUpperCase();
+    else if (k === 'properties') out.properties = Object.fromEntries(Object.entries(v as object).map(([name, s]) => [name, toGeminiSchema(s)]));
+    else if (k === 'items') out.items = toGeminiSchema(v);
+    else out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * A `GenerateContentRequest` that asks for JSON matching `schema`. Batch requests must use `responseSchema`:
+ * the Batch API silently mangles `responseJsonSchema` (nested objects lose their properties), so answers come
+ * back without scores or an introduction.
+ */
+function contentRequest(opts: JsonRequest, thinking: object | undefined, batch = false) {
   return {
     systemInstruction: { parts: [{ text: opts.system }] },
     contents: [{ role: 'user', parts: [{ text: opts.prompt }] }],
     generationConfig: {
       responseMimeType: 'application/json',
-      responseJsonSchema: opts.schema,
+      ...(batch ? { responseSchema: toGeminiSchema(opts.schema) } : { responseJsonSchema: opts.schema }),
       maxOutputTokens: opts.maxOutputTokens ?? 60_000,
       temperature: 0.7,
       ...(thinking ? { thinkingConfig: thinking } : {}),
@@ -246,7 +264,7 @@ export async function createBatch(opts: {
           inputConfig: {
             requests: {
               requests: opts.items.map((item) => ({
-                request: { model: `models/${model}`, ...contentRequest({ system: opts.system, prompt: item.prompt, schema: opts.schema }, thinking) },
+                request: { model: `models/${model}`, ...contentRequest({ system: opts.system, prompt: item.prompt, schema: opts.schema }, thinking, true) },
                 metadata: { key: item.key },
               })),
             },
