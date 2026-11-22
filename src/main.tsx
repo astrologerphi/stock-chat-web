@@ -6,8 +6,7 @@ import './styles.css';
 import { useRoute } from './router.ts';
 import { useSettings } from './settings.ts';
 import { isOpenBatch, useBatches } from './batches.ts';
-import { syncCloud, useCloud, useDataVersion } from './cloud.ts';
-import { relTime } from './format.ts';
+import { useDataVersion } from './cloud.ts';
 import { isActive, useTasks } from './tasks.ts';
 import { setTheme, useTheme, type Theme } from './theme.ts';
 import * as I from './components/icons.tsx';
@@ -18,6 +17,7 @@ import { Tags } from './pages/Tags.tsx';
 import { StockDetail } from './pages/StockDetail.tsx';
 import { StockList } from './pages/StockList.tsx';
 import { EtfList } from './pages/EtfList.tsx';
+import { EtfDetail } from './pages/EtfDetail.tsx';
 
 function TaskIndicator() {
   const tasks = useTasks();
@@ -45,25 +45,6 @@ function TaskIndicator() {
         </a>
       )}
     </>
-  );
-}
-
-function CloudIndicator() {
-  const cloud = useCloud();
-  if (cloud.state === 'off') return null;
-  const tone = cloud.state === 'error' || cloud.state === 'blocked' ? 'error' : cloud.state === 'syncing' ? 'syncing' : cloud.pending > 0 ? 'pending' : 'synced';
-  const synced = cloud.lastPushAt && cloud.lastPullAt ? (cloud.lastPushAt > cloud.lastPullAt ? cloud.lastPushAt : cloud.lastPullAt) : (cloud.lastPushAt ?? cloud.lastPullAt);
-  const label =
-    tone === 'error'
-      ? `Cloud sync failed: ${cloud.message}`
-      : tone === 'syncing'
-        ? 'Syncing with Turso…'
-        : `${synced ? `Synced with Turso ${relTime(synced)}` : 'Not synced yet'}${cloud.pending ? ` · ${cloud.pending.toLocaleString('en-US')} local change${cloud.pending === 1 ? '' : 's'} to send` : ''}`;
-  return (
-    <button type="button" class="cloud-btn" data-tone={tone} title={`${label}\nClick to sync now`} aria-label={`${label}. Sync now`} disabled={tone === 'syncing'} onClick={() => void syncCloud({ manual: true })}>
-      {cloud.state === 'blocked' ? <I.CloudOff size={16} /> : <I.Cloud size={16} />}
-      <span class="cloud-btn__dot" aria-hidden="true" />
-    </button>
   );
 }
 
@@ -109,10 +90,14 @@ function App() {
   }, []);
 
   const stockMatch = /^\/stock\/(.+)$/.exec(route.path);
+  const etfMatch = /^\/etf\/(.+)$/.exec(route.path);
   let page;
   let section: 'stocks' | 'etfs' | 'prompts' | 'tags' | 'settings' = 'stocks';
   if (stockMatch) page = <StockDetail key={stockMatch[1]} symbol={decodeURIComponent(stockMatch[1]!)} />;
-  else if (route.path === '/etfs') {
+  else if (etfMatch) {
+    page = <EtfDetail key={etfMatch[1]} symbol={decodeURIComponent(etfMatch[1]!)} />;
+    section = 'etfs';
+  } else if (route.path === '/etfs') {
     page = <EtfList params={route.params} />;
     section = 'etfs';
   } else if (route.path === '/prompts') {
@@ -154,7 +139,6 @@ function App() {
         </nav>
         <div class="topbar__right">
           <TaskIndicator />
-          <CloudIndicator />
           <ThemeSwitch />
         </div>
       </header>

@@ -41,6 +41,7 @@ export interface StockRow {
 }
 
 export interface StockDetail extends Omit<StockRow, 'scores'> {
+  isEtf: boolean;
   scores: Record<string, ScoreEntry>;
   description: string;
   website: string;
@@ -55,6 +56,44 @@ export interface StockDetail extends Omit<StockRow, 'scores'> {
   diagrams: Diagram[];
   llmModel: string | null;
   llmError: string | null;
+}
+
+/** One end-of-day close. */
+export interface PricePoint {
+  date: string;
+  price: number;
+}
+
+/** Where a holding links to when it is also in the local database. */
+export type HoldingLink = 'stock' | 'etf' | null;
+
+export interface EtfHolding {
+  asset: string;
+  name: string;
+  weight: number | null;
+  shares: number | null;
+  marketValue: number | null;
+  image: string;
+  link: HoldingLink;
+}
+
+export interface EtfHoldings {
+  holdings: EtfHolding[];
+  updatedAt: string | null;
+}
+
+export interface EtfInfo {
+  description: string;
+  issuer: string;
+  assetClass: string;
+  expenseRatio: number | null;
+  aum: number | null;
+  nav: number | null;
+  avgVolume: number | null;
+  holdingsCount: number | null;
+  inceptionDate: string;
+  website: string;
+  sectors: { name: string; weight: number }[];
 }
 
 export interface ListResponse {

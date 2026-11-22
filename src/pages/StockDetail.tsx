@@ -1,16 +1,17 @@
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api.ts';
-import { scrollToTop } from '../router.ts';
+import { navigate, scrollToTop } from '../router.ts';
 import { compact, countryName, flag, fullTime, money, relTime } from '../format.ts';
 import { useSettings } from '../settings.ts';
 import { isActive, runAnalysis, taskKey, useOnTasksFinished, useTasks } from '../tasks.ts';
 import { toast } from '../toast.ts';
 import * as I from '../components/icons.tsx';
 import { Avatar, Chip, FloatGauge, Heat, Markdown, Modal, ScoreDial, Spinner, svgUrl } from '../components/ui.tsx';
+import { PriceChart } from '../components/PriceChart.tsx';
 import type { Diagram, PromptConfig, StockDetail as Detail, TagInfo, TaskStatus } from '../types.ts';
 
-function Fact({ label, children }: { label: string; children: ComponentChildren }) {
+export function Fact({ label, children }: { label: string; children: ComponentChildren }) {
   return (
     <div class="fact">
       <dt>{label}</dt>
@@ -243,6 +244,10 @@ export function StockDetail({ symbol }: { symbol: string }) {
   const load = useCallback(async () => {
     try {
       const d = await api.detail(symbol);
+      if (d.isEtf) {
+        navigate(`/etf/${encodeURIComponent(symbol)}`, undefined, true);
+        return;
+      }
       setData(d);
       setError(null);
       if (settings.fmpKey && (d.heat == null || !d.heatUpdatedAt || Date.now() - Date.parse(d.heatUpdatedAt) > 12 * 3600_000)) {
@@ -381,6 +386,8 @@ export function StockDetail({ symbol }: { symbol: string }) {
           </Fact>
         )}
       </dl>
+
+      <PriceChart symbol={data.symbol} />
 
       <div class="detail-grid">
         <div class="detail-main">

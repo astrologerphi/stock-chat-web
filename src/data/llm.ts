@@ -251,6 +251,11 @@ export async function applyAnalysis(symbol: string, result: LlmResult, model: st
     if (Number.isFinite(score)) scores.set(s.id, { score, reason: String(s.reason ?? '').trim() });
   }
 
+  // Don't overwrite a good analysis with an incomplete answer.
+  const introduction = String(result.introduction ?? '').trim();
+  if (prompts.scorePrompts.length && !scores.size) throw new Error('Gemini’s answer had no scores');
+  if (!introduction) throw new Error('Gemini’s answer had no introduction');
+
   const llmTags = normalizeTags(result.tags ?? []).slice(0, 10);
   await transaction(async (db) => {
     // Read inside the transaction so tag edits made since the request was sent are respected.
@@ -261,7 +266,7 @@ export async function applyAnalysis(symbol: string, result: LlmResult, model: st
       symbol,
       {
         llm_tags: JSON.stringify(llmTags),
-        introduction: String(result.introduction ?? '').trim(),
+        introduction,
         last_llm_run_at: new Date().toISOString(),
         llm_model: model,
         llm_error: null,

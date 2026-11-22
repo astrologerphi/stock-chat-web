@@ -60,6 +60,41 @@ export interface FmpNews {
   url: string;
 }
 
+export interface FmpPrice {
+  symbol: string;
+  date: string;
+  price: number | null;
+  volume: number | null;
+}
+
+export interface FmpEtfHolding {
+  symbol: string;
+  asset: string | null;
+  name: string | null;
+  sharesNumber: number | null;
+  weightPercentage: number | null;
+  marketValue: number | null;
+  updatedAt: string | null;
+}
+
+export interface FmpEtfInfo {
+  symbol: string;
+  name: string | null;
+  description: string | null;
+  assetClass: string | null;
+  domicile: string | null;
+  website: string | null;
+  etfCompany: string | null;
+  expenseRatio: number | null;
+  assetsUnderManagement: number | null;
+  avgVolume: number | null;
+  inceptionDate: string | null;
+  nav: number | null;
+  navCurrency: string | null;
+  holdingsCount: number | null;
+  sectorsList: { industry: string; exposure: number }[] | null;
+}
+
 export class Fmp {
   constructor(private apiKey: string) {
     if (!apiKey) throw new HttpError(400, 'FMP API key is missing. Add it in Settings.');
@@ -79,12 +114,14 @@ export class Fmp {
     try {
       body = JSON.parse(text);
     } catch {
+      if (res.status === 402 || res.status === 403) throw new HttpError(402, 'FMP: this data is not included in your FMP plan');
       throw new HttpError(502, `FMP ${path}: unexpected response (${res.status})`);
     }
     if (body && typeof body === 'object' && 'Error Message' in body) {
       const msg = String((body as Record<string, unknown>)['Error Message']);
-      throw new HttpError(/api key/i.test(msg) ? 401 : 502, `FMP: ${msg.split('.')[0]}`);
+      throw new HttpError(/api key/i.test(msg) ? 401 : res.status === 402 ? 402 : 502, `FMP: ${msg.split('.')[0]}`);
     }
+    if (res.status === 402 || res.status === 403) throw new HttpError(402, 'FMP: this data is not included in your FMP plan');
     if (!res.ok) throw new HttpError(502, `FMP ${path} failed with ${res.status}`);
     return body as T;
   }
@@ -125,6 +162,20 @@ export class Fmp {
   async float(symbol: string) {
     const [f] = await this.get<FmpFloat[]>('shares-float', { symbol });
     return f ?? null;
+  }
+
+  /** End-of-day closing prices since `from` (YYYY-MM-DD), newest first. */
+  prices(symbol: string, from: string) {
+    return this.get<FmpPrice[]>('historical-price-eod/light', { symbol, from });
+  }
+
+  async etfInfo(symbol: string) {
+    const [info] = await this.get<FmpEtfInfo[]>('etf/info', { symbol });
+    return info ?? null;
+  }
+
+  etfHoldings(symbol: string) {
+    return this.get<FmpEtfHolding[]>('etf/holdings', { symbol });
   }
 
   news(symbol: string, opts: { from?: string; to?: string; page?: number; limit?: number } = {}) {
