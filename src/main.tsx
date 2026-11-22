@@ -18,6 +18,7 @@ import { Tags } from './pages/Tags.tsx';
 import { StockDetail } from './pages/StockDetail.tsx';
 import { StockList } from './pages/StockList.tsx';
 import { EtfList } from './pages/EtfList.tsx';
+import { EtfDetail } from './pages/EtfDetail.tsx';
 
 function TaskIndicator() {
   const tasks = useTasks();
@@ -109,10 +110,14 @@ function App() {
   }, []);
 
   const stockMatch = /^\/stock\/(.+)$/.exec(route.path);
+  const etfMatch = /^\/etf\/(.+)$/.exec(route.path);
   let page;
   let section: 'stocks' | 'etfs' | 'prompts' | 'tags' | 'settings' = 'stocks';
   if (stockMatch) page = <StockDetail key={stockMatch[1]} symbol={decodeURIComponent(stockMatch[1]!)} />;
-  else if (route.path === '/etfs') {
+  else if (etfMatch) {
+    page = <EtfDetail key={etfMatch[1]} symbol={decodeURIComponent(etfMatch[1]!)} />;
+    section = 'etfs';
+  } else if (route.path === '/etfs') {
     page = <EtfList params={route.params} />;
     section = 'etfs';
   } else if (route.path === '/prompts') {

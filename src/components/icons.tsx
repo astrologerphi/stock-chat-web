@@ -55,3 +55,5 @@ export const Layers = icon(<><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9
 export const Rows = icon(<path d="M4 6h16M4 12h16M4 18h16" />);
 export const Clock = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
 export const Stack = icon(<><rect x="4" y="9" width="16" height="11" rx="2" /><path d="M7 6h10M9 3h6" /></>);
+export const TrendLine = icon(<><path d="M3 3v18h18" /><path d="m7 15 4-5 3 3 6-7" /></>);
+export const PieChart = icon(<><path d="M21 12A9 9 0 1 1 12 3v9h9Z" /><path d="M15 3.5A9 9 0 0 1 20.5 9H15V3.5Z" /></>);

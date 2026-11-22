@@ -210,7 +210,7 @@ export function EtfList({ params: rawParams }: { params: URLSearchParams }) {
                 : rows.map((r, i) => {
                     const cap = money(r.marketCap);
                     return (
-                      <tr key={r.symbol} style={{ '--i': i }}>
+                      <tr key={r.symbol} style={{ '--i': i }} onClick={() => navigate(`/etf/${encodeURIComponent(r.symbol)}`)}>
                         <td class="company">
                           <span class="company__id">
                             <Avatar symbol={r.symbol} src={r.image} />

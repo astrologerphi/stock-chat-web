@@ -7,8 +7,10 @@ Meridian is a **single static page** with no backend. Data is stored in a SQLite
 ## Features
 
 - **Stocks** (`#/`): every NASDAQ / NYSE / AMEX company with logo, market cap, exchange filter, *heat* (news count over the last 30 days shown as a thermometer: low under 30, medium 30–99, hot 100–499, explosive 500+; loaded asynchronously per page; **Refresh heat** reloads it for every company in the background with progress and a Stop button, skipping companies refreshed in the last hour so an interrupted run resumes cheaply), float / outstanding ratio, country as flag + ISO code, country filter (sorted by company count), LLM score columns, tags filter and last LLM run. All numeric columns are sortable, and empty values always sort last.
-- **ETFs** (`#/etfs`): every actively traded US-listed ETF with icon, symbol, name, market cap, exchange (filterable) and heat, plus search, sorting and its own **Refresh heat** run. ETFs have no detail page, analysis, tags or float. Databases synced before ETFs existed fetch them automatically the first time the ETF page is opened.
-- **Stock detail**: quote and facts, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
+- **ETFs** (`#/etfs`): every actively traded US-listed ETF with icon, symbol, name, market cap, exchange (filterable) and heat, plus search, sorting and its own **Refresh heat** run. Click a row to open its detail page. ETFs have no analysis, tags or float. Databases synced before ETFs existed fetch them automatically the first time the ETF page is opened.
+- **ETF detail** (`#/etf/SYM`): quote, fund facts (AUM, expense ratio, NAV, holdings count, average volume, inception), a price chart, the full holdings list (weight bars, shares, market value; top 25 with *Show all* and search; holdings already in the database link to their stock or ETF page), sector exposure and the fund description. ETF holdings and info can need a paid FMP plan; the panel says so when FMP refuses.
+- **Price charts**: both detail pages show a [Chart.js](https://www.chartjs.org/) line chart of daily closes with 1M / 3M / 6M / YTD / 1Y / 5Y ranges, a hover crosshair that drives the price / change readout, a dashed line at the period's opening price, and open / high / low / last-close stats. The line is green when the period is up and red when it is down, and the colours follow the theme. Prices are fetched live and cached in memory for 15 minutes; they are not stored in the database.
+- **Stock detail**: quote and facts, price chart, score dials with reasons, editable tags (pick from the tag library or type a new name to create one; manual edits survive later LLM runs), landscape and portrait SVG diagrams (picked by screen orientation and width; click for full screen; generated on demand with the panel's *Generate diagrams* button), AI introduction, and leadership from FMP.
 - **Prompts**: manage score prompts (title + description), SVG diagram prompts and the introduction prompt.
 - **Tags**: the tag library gathers every tag used by any company, with company counts. Add tags, filter and sort them, or open the list filtered by a tag. Deleting a tag removes it from every company and blocks it, so later analysis runs don't add it back. Deleted tags can be restored.
 - **Settings**: Gemini key with connection test, model picker, thinking level (Gemini 3+ `thinkingLevel`, or a mapped `thinkingBudget` on 2.5; unsupported levels fall back to the model default), a separate batch model (only models that support `batchGenerateContent` are listed) and batch thinking level, FMP key with test, Turso Cloud sync (database URL and token, connection test, *Sync now*), page size and universe sync (companies and ETFs).
@@ -101,6 +103,8 @@ src/
   data/remote.ts                  Turso URL / token settings, database link, Platform-token detection
   data/cloud.ts                   Turso Cloud push / pull, sync stats, connection test, error messages
   data/stocks.ts                  list / facets / detail / tags queries, heat + profile refresh
+  data/market.ts                  live price history, ETF info and holdings (in-memory cache, local symbol lookup)
+  components/PriceChart.tsx       theme-aware price chart; chart-lib.ts registers the Chart.js parts (lazy chunk)
   data/heat.ts                    background "Refresh heat" job for every company or every ETF
   data/tags.ts                    tag library: list, add, delete (block), resolve tags on write
   data/sync.ts                    universe sync from the FMP screener (companies and ETFs) + float data
@@ -150,10 +154,17 @@ Loaded asynchronously: the heat of each company on the current page, and the num
 
 ### ETF list
 
-A separate tab lists ETFs (FMP screener with `isEtf=true`). Each row shows only the icon, symbol, name, market cap (sortable), exchange (filterable) and heat (sortable, loaded asynchronously).
+A separate tab lists ETFs (FMP screener with `isEtf=true`). Each row shows only the icon, symbol, name, market cap (sortable), exchange (filterable) and heat (sortable, loaded asynchronously). Clicking a row opens the ETF details.
+
+### ETF details
+
+- The stocks it holds (FMP `etf/holdings`), with weight, shares and market value.
+- A line chart of its price (FMP `historical-price-eod/light`).
+- Fund info and sector exposure (FMP `etf/info`).
 
 ### Stock details
 
+- A line chart of the price.
 - Company leaders, from FMP when available.
 - Everything shown in the list row.
 - Score reasons (LLM).
@@ -195,6 +206,7 @@ Both use the news, company description and other data fetched from FMP as contex
 - FMP API as the data source.
 - Gemini API as the analysis tool.
 - TypeScript 7, esbuild, Preact.
+- Chart.js for price charts (tree-shaken and loaded lazily).
 - Browser SQLite via `@tursodatabase/sync-wasm` for storage, optionally synced with Turso Cloud.
 - localStorage for secrets.
 - No backend: a single static page hosted on Vercel.

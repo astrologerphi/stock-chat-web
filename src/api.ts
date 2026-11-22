@@ -7,12 +7,13 @@ import { Fmp } from './data/fmp.ts';
 import { getHeatJob, startHeatJob, stopHeatJob } from './data/heat.ts';
 import { enqueue, getTaskStatuses } from './data/llm.ts';
 import { getPrompts, savePrompts } from './data/prompts.ts';
+import { etfHoldings, etfInfo, priceHistory } from './data/market.ts';
 import { countryFacets, exchangeFacets, getDetail, listStocks, refreshHeat, setTags, tagFacets } from './data/stocks.ts';
 import { getSyncStatus, startSync } from './data/sync.ts';
 import { addTag, deleteTag, listTagLibrary } from './data/tags.ts';
 import { HttpError } from './data/util.ts';
 import { getSettings } from './settings.ts';
-import type { BatchDraft, BatchRecord, Facet, HeatJobStatus, ListKind, ListResponse, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
+import type { BatchDraft, BatchRecord, EtfHoldings, EtfInfo, Facet, HeatJobStatus, ListKind, ListResponse, PricePoint, PromptConfig, StockDetail, SyncStatus, TagInfo, TaskKind, TaskStatus } from './types.ts';
 
 /**
  * The app's single entry point to data. Everything runs in the browser: stocks live in a local
@@ -54,6 +55,9 @@ function checkSymbol(symbol: string) {
   return s;
 }
 
+/** Throws a "missing key" error up front so callers can show it instead of a failed request. */
+const fmpClient = () => new Fmp(keys().fmp);
+
 export const api = {
   async list(p: ListParams, kind: ListKind = 'stocks'): Promise<ListResponse> {
     return listStocks({
@@ -86,6 +90,16 @@ export const api = {
     const detail = await getDetail(key ? new Fmp(key) : null, checkSymbol(symbol));
     if (!detail) throw new HttpError(404, 'Stock not found');
     return detail;
+  },
+  /** Daily closes for the last five years, oldest first. */
+  async prices(symbol: string): Promise<PricePoint[]> {
+    return priceHistory(fmpClient(), checkSymbol(symbol));
+  },
+  async etfInfo(symbol: string): Promise<EtfInfo | null> {
+    return etfInfo(fmpClient(), checkSymbol(symbol));
+  },
+  async etfHoldings(symbol: string): Promise<EtfHoldings> {
+    return etfHoldings(fmpClient(), checkSymbol(symbol));
   },
   async setTags(symbol: string, tags: string[]) {
     const saved = await setTags(checkSymbol(symbol), tags);

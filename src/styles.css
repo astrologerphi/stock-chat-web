@@ -1279,15 +1279,6 @@ main {
   color: var(--accent);
 }
 
-/* ETF rows don't open a detail page. */
-.stocks--plain tbody tr {
-  cursor: default;
-}
-
-.stocks--plain tbody tr:hover .company__symbol {
-  color: inherit;
-}
-
 /* Only four columns: give fund names the room instead of leaving a gap mid-table. */
 @media (min-width: 721px) {
   .stocks--plain .company {
@@ -3283,6 +3274,329 @@ a.task-ind {
   color: var(--text);
 }
 
+/* ---------- price chart ---------- */
+
+.price-panel {
+  margin-bottom: 20px;
+}
+
+.price-panel__head {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.price-readout {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.price-readout__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  min-height: 36px;
+  margin: 0;
+}
+
+.price-readout__price {
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.price-readout__chg {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.price-readout__when {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.seg--range button {
+  min-width: 42px;
+}
+
+.price-chart {
+  position: relative;
+  height: clamp(220px, 34vh, 380px);
+}
+
+.price-chart__state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+
+.price-chart__state p {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.price-chart__state a {
+  color: var(--accent);
+}
+
+.price-chart__state a:hover {
+  text-decoration: underline;
+}
+
+.price-chart__state .price-chart__error {
+  max-width: 60ch;
+  color: var(--coral);
+}
+
+.price-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 36px;
+  margin: 18px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.price-stats dt {
+  margin-bottom: 7px;
+  color: var(--text-3);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.price-stats dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.price-stats dd .muted {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* ---------- ETF holdings ---------- */
+
+.holdings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--well);
+  color: var(--text-3);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.holdings-search:focus-within {
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  color: var(--text-2);
+}
+
+.holdings-search input {
+  width: 170px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.holdings {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.holdings th {
+  padding: 0 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-3);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.holdings td {
+  height: 54px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.holdings th:first-child,
+.holdings td:first-child {
+  padding-left: 4px;
+}
+
+.holdings th:last-child,
+.holdings td:last-child {
+  padding-right: 4px;
+}
+
+.holdings .right {
+  text-align: right;
+}
+
+.holdings tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.holdings tr.is-link {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.holdings tr.is-link:hover {
+  background: rgb(var(--ink-rgb) / 0.025);
+}
+
+.holdings tr.is-link:hover .holding__symbol {
+  color: var(--accent);
+}
+
+.holdings__rank {
+  width: 1%;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.holding {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.holding__blank {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+
+.holding__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.holding__symbol {
+  color: var(--text);
+  font: 600 13.5px/1.25 var(--mono);
+  transition: color 0.15s;
+}
+
+a.holding__symbol:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.holding__name {
+  max-width: 320px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+}
+
+.weight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 170px;
+}
+
+.weight__bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(var(--ink-rgb) / 0.06);
+}
+
+.weight__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--w, 0) * 100%);
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.weight__pct {
+  width: 58px;
+  font-size: 13px;
+  text-align: right;
+}
+
+.holdings-more {
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.holdings-loading {
+  display: grid;
+  gap: 18px;
+  padding: 8px 0;
+}
+
+.holdings-none {
+  margin: 0;
+  padding: 18px 4px;
+}
+
+.sectors {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sectors li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px 12px;
+}
+
+.sectors__name {
+  font-size: 13.5px;
+}
+
+.sectors__pct {
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.sectors .weight__bar {
+  grid-column: 1 / -1;
+  height: 4px;
+}
+
 /* ---------- responsive ---------- */
 
 @media (max-width: 1100px) {
@@ -3301,6 +3615,37 @@ a.task-ind {
 @media (max-width: 720px) {
   main {
     padding: 0 14px 60px;
+  }
+  .price-readout__price {
+    font-size: 24px;
+  }
+  .holdings th:nth-child(1),
+  .holdings td:nth-child(1),
+  .holdings th:nth-child(4),
+  .holdings td:nth-child(4) {
+    display: none;
+  }
+  .holdings th:nth-child(2),
+  .holdings td:nth-child(2) {
+    padding-left: 0;
+  }
+  .holding {
+    gap: 10px;
+  }
+  .holding__name {
+    max-width: 110px;
+  }
+  .weight {
+    gap: 8px;
+    min-width: 0;
+  }
+  .weight__bar {
+    flex: none;
+    width: 36px;
+  }
+  .weight__pct {
+    width: auto;
+    min-width: 46px;
   }
   .topbar {
     gap: 12px;

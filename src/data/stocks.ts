@@ -85,6 +85,7 @@ function toRow(d: StockDoc, scores: Record<string, ScoreEntry>, tags: string[]):
 function toDetail(d: StockDoc, scores: Record<string, ScoreEntry>, tags: string[]): StockDetail {
   return {
     ...toRow(d, scores, tags),
+    isEtf: d.isEtf,
     scores,
     description: d.profile.description ?? '',
     website: d.profile.website ?? '',
@@ -218,10 +219,11 @@ export async function refreshProfile(fmp: Fmp | null, symbol: string, opts: { fo
   const fresh = doc.profileUpdatedAt && Date.now() - Date.parse(doc.profileUpdatedAt) < PROFILE_TTL_MS;
   if (fresh && !opts.force) return doc;
 
+  // Funds have no executives or float; skip those calls.
   const [profile, executives, float] = await Promise.all([
     fmp.profile(symbol),
-    fmp.executives(symbol).catch(() => []),
-    fmp.float(symbol).catch(() => null),
+    doc.isEtf ? [] : fmp.executives(symbol).catch(() => []),
+    doc.isEtf ? null : fmp.float(symbol).catch(() => null),
   ]);
   const set: Record<string, unknown> = {
     leaders: JSON.stringify(
