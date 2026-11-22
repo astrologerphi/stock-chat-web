@@ -87,7 +87,7 @@ The local database keeps working offline; Turso Cloud is an optional copy that l
 
 How it behaves:
 
-- A full sync (push local changes, then pull remote ones) runs when the app opens and on *Sync now* (Settings or the cloud button in the top bar). Local writes are pushed on their own about 8 seconds after they settle (at most a minute later). Remote changes are pulled only on open or on demand; a pull that changes data reloads the current screen.
+- A full sync (push local changes, then pull remote ones) runs when the app opens and on *Sync now* in Settings. Local writes are pushed on their own about 8 seconds after they settle (at most a minute later). Remote changes are pulled only on open or on demand; a pull that changes data reloads the current screen.
 - A browser with no local database yet downloads the remote one on first open. A browser that already has data merges it: local changes are pushed, then remote ones pulled. The schema is replicated too, so an empty Turso database needs no setup.
 - Rows are merged by primary key and the last write wins; concurrent edits to the same row are not combined.
 - After the first sync the browser stays **linked** to that database (localStorage key `meridian.cloud.linkedUrl`). Pointing Settings at a different URL pauses sync with a message; clear the site's data to link another database. Removing the URL just pauses sync.
@@ -111,7 +111,7 @@ src/
   data/llm.ts                     Gemini prompt + schema, SVG sanitising, in-page task queue
   data/batch.ts                   batch analysis: build prompts for review, submit, poll and apply results
   batches.ts, tasks.ts            UI stores for batch jobs and in-page LLM tasks (polling, toasts)
-  cloud.ts                        UI store for Cloud sync: sync on open, debounced push after writes, top-bar state
+  cloud.ts                        UI store for Cloud sync: sync on open, debounced push after writes, sync state for Settings
   data/fmp.ts, data/gemini.ts     API clients
   types.ts                        shared types
 scripts/
