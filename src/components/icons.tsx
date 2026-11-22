@@ -22,6 +22,7 @@ const icon = (children: JSX.Element) => ({ size, ...rest }: P) => (
 
 export const Search = icon(<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>);
 export const Sparkle = icon(<path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1" />);
+export const Star = icon(<path d="M12 2.8l2.84 5.75 6.35.92-4.6 4.48 1.09 6.32L12 17.29l-5.68 2.98 1.09-6.32-4.6-4.48 6.35-.92Z" />);
 export const Bolt = icon(<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />);
 export const ChevronDown = icon(<path d="m6 9 6 6 6-6" />);
 export const ChevronLeft = icon(<path d="m15 18-6-6 6-6" />);

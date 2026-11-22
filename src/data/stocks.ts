@@ -17,6 +17,7 @@ export interface ListQuery {
   exchanges: string[];
   countries: string[];
   tags: string[];
+  starred?: boolean;
 }
 
 const SCORE_SORT = /^score:([a-z0-9_]{1,40})$/;
@@ -29,7 +30,7 @@ const SORT_COLUMNS: Record<string, string> = {
 };
 const ROW_COLUMNS =
   's.symbol, s.name, s.image, s.exchange, s.exchange_full_name, s.country, s.sector, s.industry, s.market_cap, s.price, ' +
-  's.float_shares, s.outstanding_shares, s.float_ratio, s.heat, s.heat_updated_at, s.last_llm_run_at';
+  's.float_shares, s.outstanding_shares, s.float_ratio, s.heat, s.heat_updated_at, s.last_llm_run_at, s.starred';
 
 async function tagsFor(symbols: string[]): Promise<Map<string, string[]>> {
   const map = new Map<string, string[]>();
@@ -79,6 +80,7 @@ function toRow(d: StockDoc, scores: Record<string, ScoreEntry>, tags: string[]):
     scores: scoreValues,
     tags,
     lastLlmRunAt: d.lastLlmRunAt,
+    starred: d.starred,
   };
 }
 
@@ -114,6 +116,7 @@ export async function listStocks(q: ListQuery): Promise<ListResponse> {
     where.push(`s.country IN (${placeholders(q.countries.length)})`);
     args.push(...q.countries);
   }
+  if (q.starred) where.push('s.starred = 1');
   const tags = [...new Set(q.tags)];
   if (tags.length) {
     where.push(`s.symbol IN (SELECT symbol FROM stock_tags WHERE tag IN (${placeholders(tags.length)}) GROUP BY symbol HAVING COUNT(*) = ?)`);
@@ -154,6 +157,17 @@ export async function listStocks(q: ListQuery): Promise<ListResponse> {
     page: q.page,
     pageSize: q.pageSize,
   };
+}
+
+/** Stars or unstars a company; resolves to false if the symbol is unknown. */
+export async function setStarred(symbol: string, starred: boolean): Promise<boolean> {
+  const res = await run('UPDATE stocks SET starred = ? WHERE symbol = ?', starred ? 1 : 0, symbol);
+  return Number((res as { changes?: number } | undefined)?.changes ?? 1) > 0;
+}
+
+export async function starredCount(kind: ListKind): Promise<number> {
+  const r = await get<{ n: number }>('SELECT COUNT(*) AS n FROM stocks WHERE starred = 1 AND active = 1 AND is_etf = ?', kind === 'etfs' ? 1 : 0);
+  return Number(r?.n ?? 0);
 }
 
 async function facet(sql: string, ...args: unknown[]): Promise<Facet[]> {
